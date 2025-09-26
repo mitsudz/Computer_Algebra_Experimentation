@@ -1,62 +1,14 @@
-using TypedPolynomials
-using MultivariatePolynomials
+include("grobner_helpers.jl")
 
 # NOTE - For simplicity I am currently assuming we are working over a field -> currently I'm using the rationals
 
 # Note - in future use @inbounds to optimise array accesses, and figure out how to parallelise this algorithm
 # https://juliaalgebra.github.io/MultivariatePolynomials.jl is my new source of truth for this package:)
 
-"Computes the S-polynomial of `f` and `g`"
-function spoly(f::T, g::T)::T where {T <: AbstractPolynomial}
-    # spoly(f, g) = (lcm/lt(f))*f - (lcm/lt(g))*g
-    lm_f = leading_monomial(f)
-    lm_g = leading_monomial(g)
-    lcm_fg = lcm(lm_f, lm_g)
-    
-    lt_f = leading_term(f)
-    lt_g = leading_term(g)
-
-    return div_multiple(lcm_fg, lt_f) * f - div_multiple(lcm_fg, lt_g) * g
-end
-
-" Computes a remainder after multivariate polynomial division of `f` by the divisors."
-function polyrem(f::T, divisors::Vector{T})::T where {T <: AbstractPolynomial}
-    r = 0*f
-    while f != 0
-        lt_f = leading_term(f)
-        found_divisor = false
-
-        #println("Leading term ", lt_f)
-        # Divide leading term by a divisor and update f
-        for divisor in divisors
-            #println("Divisor ", divisor)
-            lt_div = leading_term(divisor)
-            #println("Divisor leading term: ", lt_div)
-            if divides(lt_div, lt_f)
-                #println("leading term of divisor $lt_div divides $lt_f")
-                found_divisor = true
-                #println("f was $f")
-                f -= divisor * div_multiple(lt_f, lt_div)
-                #println("f is now $f")
-                break
-            end
-        end
-
-        # Add to remainder if no divisor found
-        if found_divisor == false
-            r += lt_f
-            f -= lt_f
-        end
-    end
-
-    return r
-end
-
 " Computes a (not necessarily reduced) Grobner basis of I = <g | g in `G`>."
 function buchberger(G::Vector{T})::Vector{T} where {T <: AbstractPolynomial}
-    iter = 0 # Debugging variable
-    while true && iter < 10
-        iter += 1
+	G = deepcopy(G)
+    while true 
         n = length(G)
         
         # Apply Buchberger criterion to extend G from G'
@@ -65,7 +17,6 @@ function buchberger(G::Vector{T})::Vector{T} where {T <: AbstractPolynomial}
                 S = spoly(G[i], G[j])
                 r = polyrem(S, G)
                 if r != 0
-                    println("Adding $r from s-poly $S") 
                     # Note - slight modification to original algorithm where we divide by the updated G in this iteration
                     push!(G, r)
                 end
@@ -77,10 +28,6 @@ function buchberger(G::Vector{T})::Vector{T} where {T <: AbstractPolynomial}
             break
         end
     end
-
-	if iter == 10
-		println("Error: reached iteration max, raise/remove ceiling or check for bugs")
-	end
 
     return G
 end
@@ -133,6 +80,7 @@ Computes a (not necessarily reduced) Grobner basis of I = <g | g in `G`>. Does n
 S-polynomials according to criterion that division will remain 0 under extended basis
 """
 function buchberger2(G::Vector{T})::Vector{T} where {T <: AbstractPolynomial}
+	G = deepcopy(G)
     iter = 0 # Debugging variable
     startingPoly = 1
     while true && iter < 10
@@ -159,52 +107,7 @@ function buchberger2(G::Vector{T})::Vector{T} where {T <: AbstractPolynomial}
     return G
 end
 
-function reduce_gb(G::Vector{T})::Vector{T} where {T <: AbstractPolynomial}
-	# Remove 0 polynomials
-	G = filter(p -> !iszero(p), G)
-
-	# Make all monic
-	map!( p -> p / leading_coefficient(p), G, G)
-	length(G) == 1 && return G # Short circuit edge case
-
-	# Repeatedly reduce G until it is stable
-	while true
-		# gi -> gi ÷ (G / gi)
-		for i in 1:length(G)
-			G[i], G[end] = G[end], G[i]
-			G[end] = polyrem(G[end], G[1:end-1])
-			G[i], G[end] = G[end], G[i]
-		end
-
-		# Remove reducible polynomials
-		to_delete = Vector{Int}()
-		for i in 1:length(G)
-			if iszero(G[i])
-				have_reduced = true
-				push!(to_delete, i)
-			end
-
-			for j in 1:length(G)
-				i == j && continue
-				if divides(leading_term(G[j]), leading_term(G[i]))	
-					push!(to_delete, i)
-				end
-			end
-		end
-
-		# Delete in reverse order to avoid breaking indexing
-		for idx in reverse(to_delete)
-			deleteat!(G, i)
-		end
-		length(to_delete) == 0 && break
-	end
-
-	sort!(G, by=p -> leading_term(p))
-	return G
-end
-
-
-
+#=
 # Basic Testing:
 @polyvar t
 @polyvar u
@@ -238,4 +141,8 @@ println("\n\n")
 for pol in gr
     println(pol)
 end
+=#
+
+
+;
 
