@@ -79,16 +79,12 @@ Note - in F5B this returns whether uF or vG is divisible by B,
     @inbounds for i in eachindex(lmonoms)
     	lm = lmonoms[i]
     
-    	if divides(lm, F_sig, num_vars) # Division loop more likely to fail so check first
-        	if F_idx < indices[i]
-            	return true
-        	end #if
+        if F_idx < indices[i] && divides(lm, F_sig, num_vars) 
+            return true
     	end #if
 
-    	if divides(lm, G_sig, num_vars)
-        	if G_idx < indices[i]
-            	return true
-        	end #if
+        if G_idx < indices[i] && divides(lm, G_sig, num_vars)
+            return true
     	end #if
 	end #for
     return false
@@ -110,10 +106,8 @@ Note - in F5B this returns whether vG is divisible by B,
     indices = syzygies.indices
     @inbounds for i in eachindex(lmonoms)
         lm = lmonoms[i]
-        if divides(lm, sig, num_vars) # Division loop more likely to fail so check first
-        	if idx < indices[i]
-            	return true
-        	end #if
+        if idx < indices[i] && divides(lm, sig, num_vars) # Division loop more likely to fail so check first
+            return true
     	end #if
 	end #for
     return false
