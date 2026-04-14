@@ -13,6 +13,8 @@ include("multivar_poly_rep.jl")
 include("labelled_poly.jl")
 using DataStructures
 
+const DEBUG = false
+
 # Online TODO Items:
 # 1. Improve syzygy criterion
 # 3. Replace PQ and handle sugar & critical pairs
@@ -33,6 +35,7 @@ using DataStructures
 # TODO - Ensure vectorisation is happening if possible in all places (e.g. multiplication by a monomial)
 # TODO - Make it so polynomials are ensured to be monic before and after function calls as an invariant
 # TODO - Decide on a naming convention for functions vs variables
+# TODO - why do I get two leaky criterion on cyclic 5?
 # TODO - Add a debug mode that can be handled via command line variables at compile time
 
 # --- Syzygy Criterion Handling --- #
@@ -171,10 +174,11 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
         # Avoid Signature Drop - see Sun/Wang 2010/2011 for why this can be skipped
         uF.index == vG.index && uF.signature == vG.signature && continue
 
+
         # XXX - Syzygy criterion is second biggest time sink
         if ( !syzygy_criterion(syzygies,
-                               UInt16(F_idx), uF.signature,
-                               UInt16(G_idx), vG.signature,
+                               UInt16(uF.index), uF.signature,
+                               UInt16(vG.index), vG.signature,
                                num_vars
                               ) && 
              !rewritten_criterion(uF, vG, B, F_idx, G_idx, num_vars) )
@@ -183,6 +187,7 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
 
             newP = f5b_reduction(SP, B, syzygies, num_vars)
             push!(B, newP) # Irrespective of whether the new labelled polynomial is zero
+            #(DEBUG && iszero(newP.poly)) && println("WARNING: leaky criterion") 
 
             # Add new pairs
             if !iszero(newP.poly)
