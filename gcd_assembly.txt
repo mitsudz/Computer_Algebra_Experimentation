@@ -1,0 +1,69 @@
+	.section	__TEXT,__text,regular,pure_instructions
+	.build_version macos, 14, 0
+	.globl	_julia_gcd_575                  ; -- Begin function julia_gcd_575
+	.p2align	2
+_julia_gcd_575:                         ; @julia_gcd_575
+; ┌ @ intfuncs.jl:132 within `gcd`
+	.cfi_startproc
+; %bb.0:                                ; %top
+	sub	sp, sp, #80
+	stp	x22, x21, [sp, #32]             ; 16-byte Folded Spill
+	stp	x20, x19, [sp, #48]             ; 16-byte Folded Spill
+	stp	x29, x30, [sp, #64]             ; 16-byte Folded Spill
+	.cfi_def_cfa_offset 80
+	.cfi_offset w30, -8
+	.cfi_offset w29, -16
+	.cfi_offset w19, -24
+	.cfi_offset w20, -32
+	.cfi_offset w21, -40
+	.cfi_offset w22, -48
+	mov	x19, x2
+	mov	x20, x1
+	mov	x21, x0
+	stp	xzr, xzr, [sp]
+	str	xzr, [sp, #16]
+	mov	x8, #3492
+	movk	x8, #32909, lsl #16
+	movk	x8, #1, lsl #32
+	mov	w0, #261
+	blr	x8
+	mov	x22, x0
+	mov	w8, #4
+; │┌ @ promotion.jl:381 within `promote`
+; ││┌ @ promotion.jl:358 within `_promote`
+; │││┌ @ number.jl:7 within `convert`
+	str	x8, [sp]
+	ldr	x8, [x0]
+	str	x8, [sp, #8]
+	mov	x8, sp
+	str	x8, [x0]
+Lloh0:
+	adrp	x8, _j_BigInt_577@GOTPAGE
+Lloh1:
+	ldr	x8, [x8, _j_BigInt_577@GOTPAGEOFF]
+	mov	x0, x21
+	mov	x1, x20
+	blr	x8
+	str	x0, [sp, #16]
+; │└└└
+; │ @ intfuncs.jl:132 within `gcd` @ gmp.jl:490
+Lloh2:
+	adrp	x8, _j_gcd_578@GOTPAGE
+Lloh3:
+	ldr	x8, [x8, _j_gcd_578@GOTPAGEOFF]
+	mov	x1, x19
+	blr	x8
+	ldr	x8, [sp, #8]
+	str	x8, [x22]
+; │ @ intfuncs.jl:132 within `gcd`
+	ldp	x29, x30, [sp, #64]             ; 16-byte Folded Reload
+	ldp	x20, x19, [sp, #48]             ; 16-byte Folded Reload
+	ldp	x22, x21, [sp, #32]             ; 16-byte Folded Reload
+	add	sp, sp, #80
+	ret
+	.loh AdrpLdrGot	Lloh2, Lloh3
+	.loh AdrpLdrGot	Lloh0, Lloh1
+	.cfi_endproc
+; └
+                                        ; -- End function
+.subsections_via_symbols
