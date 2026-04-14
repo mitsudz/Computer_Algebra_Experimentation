@@ -9,6 +9,22 @@
 # TODO - use @inbounds for array accesses
 # TODO - scalar division would be useful for things other than rational (so we can to finite fields later)
 # TODO - tests need to be made more comprehensive
+# TODO - can num_vars become a value type?
+# TODO - overfull bitmask trick on divides: return ((m2 - m1) & mask) == 0
+# # Pre-calculate a mask that has a '1' in every safety bit slot
+#=
+const SAFETY_MASK = 0x80808080808080808080808080808080 # Hypothetical 8-bit slots
+
+@inline function divides(m1::GrLexMonomial, m2::GrLexMonomial)
+    # 1. Subtraction: If m1[i] > m2[i], the borrow bit at the top of the slot flips
+    # 2. XOR/OR: Check if any safety bits are active in the result
+    # (Actually, a simpler way is to check if (m2 - m1) wiped out any safety bits or set them)
+
+    # Standard 'SIMD-within-a-register' subtraction check:
+    # We use a mask of all "high bits" (the safety bits).
+    diff = (m2.bits + ALL_SAFETY_BITS) - m1.bits
+    return (diff & ALL_SAFETY_BITS) == ALL_SAFETY_BITS
+end=#
 
 using DynamicPolynomials
 

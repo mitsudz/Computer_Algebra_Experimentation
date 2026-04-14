@@ -14,9 +14,11 @@ include("labelled_poly.jl")
 using DataStructures
 
 # Online TODO Items:
-# 1. Add in lazy evaluations (decide which of the next two to try after doing that)
-# 2. Add in tail reductions
+# 1. Improve syzygy criterion
 # 3. Replace PQ and handle sugar & critical pairs
+# 1. Add in lazy evaluations 
+# 2. Add in tail reductions
+# 4. Add in a way to do initial inter-reduction (this was a 6x speedup for c5 not counting inter-reduction overhead)
 
 # TODO - Consider using BitIntegers.jl to get more space for more polynomials
 # TODO - Make this a module soon to avoid namespace conflicts
@@ -25,12 +27,95 @@ using DataStructures
 # TODO - Replace PriorityQueue with something faster and more specialised
 # TODO - implement tail reduction, switch to mod p
 # TODO - Implement normal selection strategy properly (see F4/F5 or other papers - use REFERENCES!!!)
+# TODO - use sizehint! on SyzygyPool
 # TODO - Add in speed ups to how much of the basis is passed in for things like the syzygy criterion etc.
 # TODO - Figure out a way to do more stuff in-place
 # TODO - Ensure vectorisation is happening if possible in all places (e.g. multiplication by a monomial)
 # TODO - Make it so polynomials are ensured to be monic before and after function calls as an invariant
 # TODO - Decide on a naming convention for functions vs variables
 # TODO - Add a debug mode that can be handled via command line variables at compile time
+
+# --- Syzygy Criterion Handling --- #
+
+# TODO - test new syzygy criterion and integrate in and verify correctness,
+#        check benchmark speed w/wo initial inter-reduction
+#        use the cool new divides operation in way fewer clock cycles
+#        try the loop unrolling with Val{N} if possible (otherwise just move to the priority queue etc.)
+#        this stuff is too in-depth to start with I think
+
+struct SyzygyPool
+    lmonoms::Vector{GrLexMonomial} # This should compile to Vector{UInt128} TODO - @assert isbitstype(sigs) - should keep cache lines hot
+    indices::Vector{UInt16} # We assume we never have more than 2^16 initial generators
+
+    function SyzygyPool(l, i)
+        @assert isbitstype(GrLexMonomial) "GrLexMonomial must be a bitstype for performance!"
+        new(l, i)
+    end # SyzygyPool
+end
+
+@inline function update_syz_pool(syzygies::SyzygyPool, lm::GrLexMonomial, idx::UInt16)
+    push!(syzygies.lmonoms, lm)
+    push!(syzygies.indices, idx)
+end
+
+"""
+Returns whether the syzygy criterion is satisfied by a pair of signatures
+
+Note - in F5B this returns whether uF or vG is divisible by B,
+       however, we only require monomial and syzygy index comparisons
+       rather than the entire polynomials and hence this is an optimised version.
+"""
+@inline function syzygy_criterion(
+        syzygies::SyzygyPool,
+        F_idx::UInt16, F_sig::GrLexMonomial,
+        G_idx::UInt16, G_sig::GrLexMonomial,
+        num_vars::Int
+    )
+    lmonoms = syzygies.lmonoms # The leading monomial of some polynomial
+    indices = syzygies.indices
+    @inbounds for i in eachindex(lmonoms)
+    	lm = lmonoms[i]
+    
+    	if divides(lm, F_sig, num_vars) # Division loop more likely to fail so check first
+        	if F_idx < indices[i]
+            	return true
+        	end #if
+    	end #if
+
+    	if divides(lm, G_sig, num_vars)
+        	if G_idx < indices[i]
+            	return true
+        	end #if
+    	end #if
+	end #for
+    return false
+end # syzygy_criterion
+
+"""
+Returns whether the syzygy criterion is satisfied by a single signatures
+
+Note - in F5B this returns whether vG is divisible by B,
+       however, we only require monomial and syzygy index comparisons
+       rather than the entire polynomials and hence this is an optimised version.
+"""
+@inline function syzygy_criterion(
+        syzygies::SyzygyPool,
+        idx::UInt16, sig::GrLexMonomial,
+        num_vars::Int
+    )
+    lmonoms = syzygies.lmonoms # The leading monomial of some polynomial
+    indices = syzygies.indices
+    @inbounds for i in eachindex(lmonoms)
+        lm = lmonoms[i]
+        if divides(lm, sig, num_vars) # Division loop more likely to fail so check first
+        	if idx < indices[i]
+            	return true
+        	end #if
+    	end #if
+	end #for
+    return false
+end # syzygy_criterion
+
 
 # --- F5B Core Logic --- #
 #= # TODO This should be handled OUTSIDE of this file by a wrapper/main file
@@ -69,26 +154,40 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
         end #for
     end #for
 
+    # Set up for Syzygy Criterion
+    lms = GrLexMonomial[leading_monomial(LP.poly) for LP in B]
+	idxs = UInt16[UInt16(LP.index) for LP in B]
+	syzygies = SyzygyPool(lms, idxs)
+
     # Main Loop
     while !isempty(CP)
-        (F_idx, G_idx) = dequeue!(CP)
+        (F_idx, G_idx) = dequeue!(CP) # XXX - Biggest time sink
         F, G = B[F_idx], B[G_idx]
 
         u, v = critical_pair(F.poly, G.poly, num_vars) # TODO - MAKE IT SO THESE AREN'T RECOMPUTED
         uF = F * u # TODO - LAZY - Delay computation of this multiplication until it is actually necessary 
-        vG = G * v
+        vG = G * v # XXX - Third biggest time sink^
 
         # Avoid Signature Drop - see Sun/Wang 2010/2011 for why this can be skipped
         uF.index == vG.index && uF.signature == vG.signature && continue
 
-        if !syzygy_criterion(uF, vG, B, num_vars) && !rewritten_criterion(uF, vG, B, F_idx, G_idx, num_vars)
+        # XXX - Syzygy criterion is second biggest time sink
+        if ( !syzygy_criterion(syzygies,
+                               UInt16(F_idx), uF.signature,
+                               UInt16(G_idx), vG.signature,
+                               num_vars
+                              ) && 
+             !rewritten_criterion(uF, vG, B, F_idx, G_idx, num_vars) )
+        #if !syzygy_criterion(uF, vG, B, num_vars) && !rewritten_criterion(uF, vG, B, F_idx, G_idx, num_vars)
             SP = (uF // leading_coefficient(F.poly)) - (vG // leading_coefficient(G.poly)) # S-polynomial
 
-            newP = f5b_reduction(SP, B, num_vars)
+            newP = f5b_reduction(SP, B, syzygies, num_vars)
             push!(B, newP) # Irrespective of whether the new labelled polynomial is zero
 
             # Add new pairs
             if !iszero(newP.poly)
+                update_syz_pool(syzygies, leading_monomial(newP.poly), UInt16(newP.index))
+
                 new_idx = length(B)
                 for i in 1:(new_idx - 1)
                     iszero(B[i].poly) && continue
@@ -104,30 +203,6 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
     return _reduce_gb([Q.poly for Q in B], num_vars)
 end # _f5b
 
-"""
-Returns whether uF or vG is divisible by B.
-"""
-function syzygy_criterion(
-        uF::LabelledPolynomial{C},
-        vG::LabelledPolynomial{C},
-        B::Vector{LabelledPolynomial{C}},
-        num_vars::Int)::Bool where {C}
-    for LP in B
-        iszero(LP.poly) && continue
-        if divisible(uF, LP, num_vars) || divisible(vG, LP, num_vars)
-            return true
-        end #if
-    end #for
-
-    return false
-end # syzygy_criterion
-
-"""
-Returns whether F is divisible by G
-"""
-@inline function divisible(F::LabelledPolynomial{C}, G::LabelledPolynomial{C}, num_vars::Int)::Bool where C
-    return F.index < G.index && divides(leading_monomial(G), F.signature, num_vars)
-end # divisible
 
 """
 Determines whether syzygies from this pair will be handled later.
@@ -140,7 +215,7 @@ function rewritten_criterion(
         F_gen::Int,
         G_gen::Int,
         num_vars::Int)::Bool where C
-    for (i, LP) in enumerate(B)
+    for (i, LP) in enumerate(B) # TODO - we don't need to iterate through all of them this way since we only need things generated later!
         if (rewritable(uF, F_gen, LP, i, num_vars) || rewritable(vG, G_gen, LP, i, num_vars))
             return true
         end
@@ -171,6 +246,7 @@ Invariant: F.signature == f5b_reduction(F).signature
 function f5b_reduction( # TODO - Make this whole function mutate in-place!
         F::LabelledPolynomial{C},
         B::Vector{LabelledPolynomial{C}},
+        syzygies::SyzygyPool,
         num_vars::Int) where C
     iszero(F.poly) && return F # Early exit
     
@@ -182,14 +258,16 @@ function f5b_reduction( # TODO - Make this whole function mutate in-place!
             !divides(leading_monomial(G), leading_monomial(F), num_vars) && continue
 
             v = div_multiple(leading_monomial(F), leading_monomial(G)) 
-            vG = v * G
+            vG = v * G # TODO - DELAY COMPUTATION!
 
             !is_sig_greater(F, vG) && continue
+
+            syzygy_criterion(syzygies, UInt16(vG.index), vG.signature, num_vars) && continue
 
             crit_failure = false
             for (H_idx, H) in enumerate(B)
                 if (
-                    (!iszero(H.poly) && divisible(vG, H, num_vars)) || 
+                    #(!iszero(H.poly) && divisible(vG, H, num_vars)) || 
                     rewritable(vG, G_idx, H, H_idx, num_vars)
                    )
                     crit_failure = true

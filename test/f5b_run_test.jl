@@ -24,16 +24,20 @@ end
     g2 = quick_lp(2, [0, 0], C(1)x2 + 1, vars)
     B = [g1, g2]
 
+    # Initialize Pool for the tests
+    lms = [leading_monomial(LP.poly) for LP in B]
+    idxs = UInt16[UInt16(LP.index) for LP in B]
+    syzygies = SyzygyPool(lms, idxs)
+
     @testset "Basic Top Reduction" begin
-        # F = x1*x2, signature (1, x2)
-        # Should be reduced by g1 (LM=x1) because (1, x2) > x2 * (1, 1) is false? 
-        # No, is_sig_greater(F, vG) must be true.
-        # Let's make F have a high signature so it can be reduced.
+        # F = x1*x2, signature (1, x2^2)
+        # v = x2, G = g1. vG signature is (1, x2).
+        # F.sig (1, x2^2) > vG.sig (1, x2), so reduction should happen.
         F = LabelledPolynomial(1, pack_exponents([0, 2]), from_dynamic(C(1)x1*x2, vars))
         
-        # v = x2, G = g1. vG signature is (1, x2).
-        # F signature is (1, x2^2). (1, x2^2) > (1, x2), so reduction happens.
-        reduced_F = f5b_reduction(F, B, num_vars)
+        reduced_F = f5b_reduction(F, B, syzygies, num_vars)
+        
+        # Verify g1.LM (x1) no longer divides the result's LM
         @test !divides(leading_monomial(g1.poly), leading_monomial(reduced_F.poly), num_vars)
     end
 
@@ -42,14 +46,53 @@ end
         # F has signature (1, 1). 
         # If we try to reduce F by g1, v = 1. v*g1 has signature (1, 1).
         # is_sig_greater(F, vG) will be false (they are equal).
-        # Reduction should NOT occur.
         F = LabelledPolynomial(1, pack_exponents([0, 0]), from_dynamic(C(1)x1 + C(1)x2, vars))
-        reduced_F = f5b_reduction(F, B, num_vars)
+        
+        reduced_F = f5b_reduction(F, B, syzygies, num_vars)
         
         @test reduced_F.poly == F.poly # No change because of signature rule
     end
-end
 
+    @testset "Syzygy Criterion Block" begin
+        # Let's create a case where a reduction is logically possible by LM, 
+        # but the Syzygy Pool says no.
+        
+        # Setup: Basis g1 has index 1, LM x1.
+        # Suppose we have a reducer vG where vG.sig = x1 and vG.index = 0.
+        # This sig is divisible by g1.LM (x1) and 0 < 1. 
+        # The pool should trigger a 'continue'.
+        
+        # F = x1*x2, sig = (10, 1) [Very high index to ensure sig_greater passes]
+        F = LabelledPolynomial(10, identity_monomial(), from_dynamic(C(1)x1*x2, vars))
+        
+        # We are reducing by g1 (index 1). v = x2. 
+        # vG signature is (1, x2).
+        # Is (1, x2) in pool? pool has (x1, index 1). 
+        # x1 does NOT divide x2. No syzygy hit here.
+        
+        # Now let's try reducing by g1 where v = x1.
+        # F = x1^2, sig = (10, 1)
+        F2 = LabelledPolynomial(10, identity_monomial(), from_dynamic(C(1)x1^2, vars))
+        # Reducer vG: v=x1, G=g1. vG signature is (1, x1).
+        # Pool check: does pool.LM(x1) divide vG.sig(x1)? Yes.
+        # Is vG.index(1) < pool.index(1)? No (1 < 1 is false).
+        
+        # To force a hit: Let's add a "Principal Syzygy" to the pool manually
+        # that specifically blocks index 0 with LM x2.
+        test_lms = [leading_monomial(g1.poly), pack_exponents([0, 1])] # g1.LM and x2
+        test_idxs = UInt16[1, 5] # g1 and a "future" generator at index 5
+        test_pool = SyzygyPool(test_lms, test_idxs)
+        
+        # F = x1*x2, sig = (10, 1). Reducer vG = x2*g1.
+        # vG signature is (1, x2).
+        # Pool check: pool element 2 has LM x2 and index 5.
+        # vG.sig x2 is divisible by x2. vG.index 1 < 5.
+        # HIT! Reduction should be blocked.
+        
+        reduced_F2 = f5b_reduction(F, B, test_pool, num_vars)
+        @test reduced_F2.poly == F.poly # Should remain unreduced due to syzygy hit
+    end
+end
 
 # TODO - TESTS ARE CURRENTLY FAILING DUE TO NAMESPACE CONFLICTS!!!
 @testset "Full F5B Algorithm Convergence" begin

@@ -10,7 +10,7 @@ function quick_lp(idx, sig_exps, poly_dynamic, vars)
     return LabelledPolynomial(idx, sig, p)
 end
 
-@testset "F5B Criterion Unit Tests" begin
+@testset "F5B Rewritten Criterion Unit Tests" begin
     @polyvar x1 x2 x3
     vars = [x1, x2, x3]
     num_vars = 3
@@ -23,42 +23,6 @@ end
     g2 = quick_lp(2, [0, 0, 0], C(1)x2 + C(1)x3, vars)
     
     B = [g1, g2]
-
-    @testset "divisible (Syzygy logic)" begin
-        # divisible(F, G) returns true if:
-        # F.index < G.index AND G.LM divides F.signature
-        
-        # Case 1: LM(g1) is x1. Let's make F have signature x1^2 and index 0.
-        # Since 0 < 1 and x1 | x1^2, this should be true.
-        f1 = quick_lp(0, [2, 0, 0], C(1)x3, vars)
-        @test divisible(f1, g1, num_vars) == true
-
-        # Case 2: Monomial divides, but Index is NOT lower
-        # If F.index is 1 and G.index is 1, it should be false.
-        f2 = quick_lp(1, [2, 0, 0], C(1)x3, vars)
-        @test divisible(f2, g1, num_vars) == false
-
-        # Case 3: Index is lower, but Monomial does NOT divide
-        # LM(g1) is x1, F.sig is x2
-        f3 = quick_lp(0, [0, 1, 0], C(1)x3, vars)
-        @test divisible(f3, g1, num_vars) == false
-    end
-
-    @testset "syzygy_criterion" begin
-        # Triggers if uF OR vG is 'divisible' by any element in B
-        
-        # Create a pair where uF's signature is divisible by LM(g1)
-        # uF.sig = x1, index = 0. g1.LM = x1, index = 1.
-        uF = quick_lp(0, [1, 0, 0], C(1)x1, vars)
-        vG = quick_lp(5, [0, 0, 0], C(1)x1, vars) # Random non-violating vG
-        
-        @test syzygy_criterion(uF, vG, B, num_vars) == true
-        
-        # Create a pair that is safe
-        uF_safe = quick_lp(5, [1, 0, 0], C(1)x1, vars) # index 5 > g1.index 1
-        vG_safe = quick_lp(5, [0, 1, 0], C(1)x1, vars)
-        @test syzygy_criterion(uF_safe, vG_safe, B, num_vars) == false
-    end
 
     @testset "rewritable" begin
         # rewritable(F, F_gen, G, G_gen) returns true if:
@@ -105,4 +69,67 @@ end
         uF_low = quick_lp(2, [2, 0, 0], C(1)x1, vars)
         @test rewritten_criterion(uF_low, vG, B_rewriting, 0, 6, num_vars) == true
     end
+end
+
+@testset "SyzygyPool Optimized Criterion" begin
+    @polyvar x1 x2 x3
+    vars = [x1, x2, x3]
+    num_vars = 3
+    C = Rational{Int64}
+
+    # 1. Setup a Basis B and a corresponding SyzygyPool
+    # g1: index 1, LM = x1
+    g1 = quick_lp(1, [0, 0, 0], C(1)x1 + C(1)x2, vars)
+    # g2: index 5, LM = x2 (intentional gap in indices)
+    g2 = quick_lp(5, [0, 0, 0], C(1)x2 + C(1)x3, vars)
+    
+    B = [g1, g2]
+    
+    # Sync SyzygyPool with Basis B
+    # Pool stores (LM, index)
+    pool = SyzygyPool(
+        [leading_monomial(g1), leading_monomial(g2)], 
+        [UInt16(1), UInt16(5)]
+    )
+
+    @testset "Single Signature Check" begin
+        # F has signature x1^2 and original generator index 0.
+        # Should be divisible by g1 (LM=x1, index=1) because 0 < 1.
+        sig_f = pack_exponents([2, 0, 0])
+        idx_f = UInt16(0)
+        
+        @test syzygy_criterion(pool, idx_f, sig_f, num_vars) == true
+
+        # Change index to 2. Now 2 > 1 (g1) and 2 < 5 (g2).
+        # But sig_f (x1^2) is NOT divisible by g2.LM (x2).
+        # So it should be false.
+        idx_f_high = UInt16(2)
+        @test syzygy_criterion(pool, idx_f_high, sig_f, num_vars) == false
+    end
+
+    @testset "Double Signature Check (S-Pairs)" begin
+        # uF: sig x1, index 0 (Hit against g1)
+        # vG: sig x3, index 10 (Safe)
+        uF_sig = pack_exponents([1, 0, 0])
+        uF_idx = UInt16(0)
+        vG_sig = pack_exponents([0, 0, 1])
+        vG_idx = UInt16(10)
+
+        @test syzygy_criterion(pool, uF_idx, uF_sig, vG_idx, vG_sig, num_vars) == true
+
+        # Both safe
+        @test syzygy_criterion(pool, UInt16(10), uF_sig, UInt16(10), vG_sig, num_vars) == false
+    end
+
+	@testset "Edge Case: Boundary Indices" begin
+    	# Create a signature that ONLY divides g1
+    	# g1.LM is x1. Let's use sig = x1 (no x2, so it won't divide g2.LM)
+    	sig_only_g1 = pack_exponents([1, 0, 0]) 
+    
+    	# If idx is 1, and pool index is 1: 1 < 1 is false.
+    	@test syzygy_criterion(pool, UInt16(1), sig_only_g1, num_vars) == false 
+    
+    	# If idx is 0, and pool index is 1: 0 < 1 is true.
+    	@test syzygy_criterion(pool, UInt16(0), sig_only_g1, num_vars) == true
+	end
 end

@@ -7,6 +7,7 @@ using DataStructures
 
 # Note: Assumes FastPoly, GrLexMonomial, etc., are defined in your environment
 
+# TODO - change index to a UInt16 with the assumption that we don't get 60k+ initial polynomials, also better name for index
 # TODO - Move signature and index to their own struct called signature
 struct LabelledPolynomial{C}
     index::Int
