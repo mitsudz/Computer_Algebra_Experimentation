@@ -25,6 +25,10 @@ In F5, (S1, i) > (S2, j) if:
     LP1.index == LP2.index && return LP1.signature > LP2.signature
     return LP1.index < LP2.index
 end
+@inline function is_sig_greater(F_sig::GrLexMonomial, F_idx::Int, G_sig::GrLexMonomial, G_idx::Int)
+    F_idx == G_idx && return F_sig > G_sig
+    return F_idx < G_idx
+end
 
 # --- Getters ---
 

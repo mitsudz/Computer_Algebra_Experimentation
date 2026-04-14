@@ -16,11 +16,11 @@ using DataStructures
 const DEBUG = false
 
 # Online TODO Items:
-# 1. Improve syzygy criterion
-# 3. Replace PQ and handle sugar & critical pairs
 # 1. Add in lazy evaluations 
-# 2. Add in tail reductions
-# 4. Add in a way to do initial inter-reduction (this was a 6x speedup for c5 not counting inter-reduction overhead)
+# 2. Improve divides to be one subtraction
+# 3. Replace PQ and handle sugar & critical pairs
+# 4. Add in tail reductions
+# 5. Add in a way to do initial inter-reduction (this was a 6x speedup for c5 not counting inter-reduction overhead)
 
 # TODO - Consider using BitIntegers.jl to get more space for more polynomials
 # TODO - Make this a module soon to avoid namespace conflicts
@@ -162,22 +162,24 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
         F, G = B[F_idx], B[G_idx]
 
         u, v = critical_pair(F.poly, G.poly, num_vars) # TODO - MAKE IT SO THESE AREN'T RECOMPUTED
-        uF = F * u # TODO - LAZY - Delay computation of this multiplication until it is actually necessary 
-        vG = G * v # XXX - Third biggest time sink^
+        uF_sig = F.signature * u
+        vG_sig = G.signature * v
+        #uF = F * u # TODO - LAZY - Delay computation of this multiplication until it is actually necessary 
+        #vG = G * v # XXX - Third biggest time sink^
 
         # Avoid Signature Drop - see Sun/Wang 2010/2011 for why this can be skipped
-        uF.index == vG.index && uF.signature == vG.signature && continue
+        F.index == G.index && uF_sig == vG_sig && continue
 
 
-        # XXX - Syzygy criterion is second biggest time sink
+        # XXX - Syzygy criterion is second biggest time sink - but this is in the divides operation on monomials
         if ( !syzygy_criterion(syzygies,
-                               UInt16(uF.index), uF.signature,
-                               UInt16(vG.index), vG.signature,
+                               UInt16(F.index), uF_sig,
+                               UInt16(G.index), vG_sig,
                                num_vars
                               ) && 
-             !rewritten_criterion(uF, vG, B, F_idx, G_idx, num_vars) )
+            !rewritten_criterion(uF_sig, F.index, vG_sig, G.index, B, F_idx, G_idx, num_vars) )
         #if !syzygy_criterion(uF, vG, B, num_vars) && !rewritten_criterion(uF, vG, B, F_idx, G_idx, num_vars)
-            SP = (uF // leading_coefficient(F.poly)) - (vG // leading_coefficient(G.poly)) # S-polynomial
+            SP = ((F*u) // leading_coefficient(F.poly)) - ((G*v) // leading_coefficient(G.poly)) # S-polynomial
 
             newP = f5b_reduction(SP, B, syzygies, num_vars)
             push!(B, newP) # Irrespective of whether the new labelled polynomial is zero
@@ -208,14 +210,20 @@ Determines whether syzygies from this pair will be handled later.
 Returns whether uF or vG is rewritable by B.
 """
 function rewritten_criterion(
-        uF::LabelledPolynomial{C}, 
-        vG::LabelledPolynomial{C}, 
+        #uF::LabelledPolynomial{C}, 
+        #vG::LabelledPolynomial{C}, 
+        uF_sig::GrLexMonomial,
+        F_idx::Int,
+        vG_sig::GrLexMonomial,
+        G_idx::Int,
         B::Vector{LabelledPolynomial{C}},
         F_gen::Int,
         G_gen::Int,
         num_vars::Int)::Bool where C
     for (i, LP) in enumerate(B) # TODO - we don't need to iterate through all of them this way since we only need things generated later!
-        if (rewritable(uF, F_gen, LP, i, num_vars) || rewritable(vG, G_gen, LP, i, num_vars))
+        LP_sig = LP.signature
+        LP_idx = LP.index
+        if (rewritable(uF_sig, F_idx, F_gen, LP_sig, LP_idx, i, num_vars) || rewritable(vG_sig, G_idx, G_gen, LP_sig, LP_idx, i, num_vars))
             return true
         end
     end
@@ -227,12 +235,16 @@ end # rewritten_criterion
 Returns whether F is 'rewritable' by G
 """
 @inline function rewritable(
-        F::LabelledPolynomial{C},
+        #F::LabelledPolynomial{C},
+        F_sig::GrLexMonomial,
+        F_idx::Int,
         F_gen::Int, 
-        G::LabelledPolynomial{C}, 
+        #G::LabelledPolynomial{C}, 
+        G_sig::GrLexMonomial,
+        G_idx::Int,
         G_gen::Int,
         num_vars::Int)::Bool where C
-    return F_gen < G_gen && G.index == F.index && divides(G.signature, F.signature, num_vars)
+    return F_gen < G_gen && G_idx == F_idx && divides(G_sig, F_sig, num_vars)
 end # rewritable
 
 """
@@ -257,17 +269,18 @@ function f5b_reduction( # TODO - Make this whole function mutate in-place!
             !divides(leading_monomial(G), leading_monomial(F), num_vars) && continue
 
             v = div_multiple(leading_monomial(F), leading_monomial(G)) 
-            vG = v * G # TODO - DELAY COMPUTATION!
+            #vG = v * G # TODO - DELAY COMPUTATION!
+            vG_sig = v * G.signature
 
-            !is_sig_greater(F, vG) && continue
+            !is_sig_greater(F.signature, F.index, vG_sig, G.index) && continue
 
-            syzygy_criterion(syzygies, UInt16(vG.index), vG.signature, num_vars) && continue
+            syzygy_criterion(syzygies, UInt16(G.index), vG_sig, num_vars) && continue
 
             crit_failure = false
             for (H_idx, H) in enumerate(B)
                 if (
                     #(!iszero(H.poly) && divisible(vG, H, num_vars)) || 
-                    rewritable(vG, G_idx, H, H_idx, num_vars)
+                    rewritable(vG_sig, G.index, G_idx, H.signature, H.index, H_idx, num_vars)
                    )
                     crit_failure = true
                     break
@@ -279,7 +292,7 @@ function f5b_reduction( # TODO - Make this whole function mutate in-place!
             c = leading_coefficient(F.poly) / leading_coefficient(G.poly)
 
             # TODO - IN-PLACE SUBTRACTION!
-            F = F - (c * vG)
+            F = F - (c * (v * G))
             reduced = true
             break
             # @assert newF.signature == F.signature "F5B Reduction Error - Signature Changed" # Only in debug mode

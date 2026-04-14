@@ -40,12 +40,13 @@ end
         # Since 10 > 5, we check if F is rewritable by G
         # Note: Your function signature is rewritable(F, F_gen, G, G_gen)
         # So we pass F_gen_idx (10) as F_gen and i (5) as G_gen
-        @test rewritable(F, F_gen_idx, G, G_gen_idx, num_vars) == false # Because F_gen < G_gen is false
+        @test rewritable(F.signature, F.index, F_gen_idx, G.signature, G.index, G_gen_idx, num_vars) == false # Because F_gen < G_gen is false
+
         
         # Correct direction: Is a NEWER polynomial (G_gen=10) rewritable by an OLDER one (F_gen=5)?
         # If the function is called as rewritable(uF, F_idx, LP, i...) 
         # F_gen is the index of the current pair in the loop, i is the basis index.
-        @test rewritable(F, 5, G, 10, num_vars) == true
+        @test rewritable(F.signature, F.index, 5, G.signature, G.index, 10, num_vars) == true
     end
 
     @testset "rewritten_criterion" begin
@@ -67,7 +68,7 @@ end
         # To return true, F_gen must be < i.
         
         uF_low = quick_lp(2, [2, 0, 0], C(1)x1, vars)
-        @test rewritten_criterion(uF_low, vG, B_rewriting, 0, 6, num_vars) == true
+        @test rewritten_criterion(uF_low.signature, uF_low.index, vG.signature, vG.index, B_rewriting, 0, 6, num_vars) == true
     end
 end
 
