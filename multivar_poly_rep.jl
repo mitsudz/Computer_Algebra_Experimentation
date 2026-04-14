@@ -10,21 +10,7 @@
 # TODO - scalar division would be useful for things other than rational (so we can to finite fields later)
 # TODO - tests need to be made more comprehensive
 # TODO - can num_vars become a value type?
-# TODO - overfull bitmask trick on divides: return ((m2 - m1) & mask) == 0
-# # Pre-calculate a mask that has a '1' in every safety bit slot
-#=
-const SAFETY_MASK = 0x80808080808080808080808080808080 # Hypothetical 8-bit slots
 
-@inline function divides(m1::GrLexMonomial, m2::GrLexMonomial)
-    # 1. Subtraction: If m1[i] > m2[i], the borrow bit at the top of the slot flips
-    # 2. XOR/OR: Check if any safety bits are active in the result
-    # (Actually, a simpler way is to check if (m2 - m1) wiped out any safety bits or set them)
-
-    # Standard 'SIMD-within-a-register' subtraction check:
-    # We use a mask of all "high bits" (the safety bits).
-    diff = (m2.bits + ALL_SAFETY_BITS) - m1.bits
-    return (diff & ALL_SAFETY_BITS) == ALL_SAFETY_BITS
-end=#
 
 using DynamicPolynomials
 
@@ -33,10 +19,14 @@ using DynamicPolynomials
 const BITS_PER_VAR = 16
 const TOTAL_BITS = 128
 const MAX_EXP = (1 << BITS_PER_VAR) - 1
+const OVERFLOW_MASK = 0x80808080808080808080808080808080 # Every 16th bit set 
 
 # --- Packed Bit Representation for Monomial in Graded Lexical Order (see Maple TODO - REF)
 
 # We'll use UInt128 to store: [Total Degree (16b)][x1 (16b)][x2 (16b)]...[x5 (16b)]
+# The last bit of each xi (and total degree) is an overflow bit. Effectively we have a maximum exponent of 2^15 ~ 32K
+# Then for testing divisibility we simply need to subtract and check for overflow 
+# (we will assume overflow cannot occur on addition)
 # This fits 7 variables + Total Degree.
 struct GrLexMonomial
     bits::UInt128
@@ -136,21 +126,20 @@ Finds monomials u and v such that u*LM(f) = v*LM(g) = lcm(LM(f), LM(g)).
 end
 
 """
-Fast divisibility check: m1 | m2
-In GrLex bit-packing, m1 divides m2 if EVERY slot in m2 >= m1.
-"""
-@inline function divides(m1::GrLexMonomial, m2::GrLexMonomial, num_vars::Int)
-    b1 = m1.bits
-    b2 = m2.bits
+Checks whether m1 | m2. 
 
-    # Check the total degree (0) and each variable slot (1:num_vars)
-    for i in 0:num_vars
-        shift = TOTAL_BITS - (i + 1) * BITS_PER_VAR
-        if ((b1 >> shift) & MAX_EXP) > ((b2 >> shift) & MAX_EXP)
-            return false
-        end
-    end
-    return true
+Assumes m1 and m2 are valid and no overflow has occurred iin the representation already
+"""
+@inline function divides(m1::GrLexMonomial, m2::GrLexMonomial)
+    # TODO - WRITE A PROPER BIT OF DOCUMENTATION HERE EXPLAINING THE BIT HACKING:
+    # 1. Subtraction: If m1[i] > m2[i], the borrow bit at the top of the slot flips
+    # 2. XOR/OR: Check if any safety bits are active in the result
+    # (Actually, a simpler way is to check if (m2 - m1) wiped out any safety bits or set them)
+
+    # Standard 'SIMD-within-a-register' subtraction check:
+    # We use a mask of all "low bits" (the safety bits).
+    diff = (m2.bits | OVERFLOW_MASK) - m1.bits
+    return (diff & OVERFLOW_MASK) == OVERFLOW_MASK
 end
 
 # --- Comparison Operations ---

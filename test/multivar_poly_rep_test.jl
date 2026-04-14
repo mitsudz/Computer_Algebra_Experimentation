@@ -35,8 +35,8 @@ include("../multivar_poly_rep.jl")
         m_div    = pack_exponents([1, 1, 0, 0, 0]) 
         m_notdiv = pack_exponents([3, 0, 0, 0, 0]) 
         
-        @test divides(m_div, m_target, 5) == true
-        @test divides(m_notdiv, m_target, 5) == false
+        @test divides(m_div, m_target) == true
+        @test divides(m_notdiv, m_target) == false
     end
 
     @testset "Arithmetic (Addition & Multiplication)" begin
@@ -255,9 +255,9 @@ end
 
     @testset "Divisibility" begin
         m1 = pack_exponents([1, 1, 1, 1, 1])
-        @test divides(id, m1, num_vars) == true
-        @test divides(m1, id, num_vars) == false
-        @test divides(id, id, num_vars) == true
+        @test divides(id, m1) == true
+        @test divides(m1, id) == false
+        @test divides(id, id) == true
     end
 end
 

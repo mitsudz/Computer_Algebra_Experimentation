@@ -38,7 +38,7 @@ end
         reduced_F = f5b_reduction(F, B, syzygies, num_vars)
         
         # Verify g1.LM (x1) no longer divides the result's LM
-        @test !divides(leading_monomial(g1.poly), leading_monomial(reduced_F.poly), num_vars)
+        @test !divides(leading_monomial(g1.poly), leading_monomial(reduced_F.poly))
     end
 
     @testset "Signature Constraint (Prevent Drop)" begin

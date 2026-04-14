@@ -16,11 +16,10 @@ using DataStructures
 const DEBUG = false
 
 # Online TODO Items:
-# 1. Add in lazy evaluations 
-# 2. Improve divides to be one subtraction
-# 3. Replace PQ and handle sugar & critical pairs
-# 4. Add in tail reductions
-# 5. Add in a way to do initial inter-reduction (this was a 6x speedup for c5 not counting inter-reduction overhead)
+# 1. Improve divides to be one subtraction (REMOVE num_vars where unecessary)
+# 2. Replace PQ and handle sugar & critical pairs
+# 3. Add in tail reductions
+# 4. Add in a way to do initial inter-reduction (this was a 6x speedup for c5 not counting inter-reduction overhead)
 
 # TODO - Consider using BitIntegers.jl to get more space for more polynomials
 # TODO - Make this a module soon to avoid namespace conflicts
@@ -79,11 +78,11 @@ Note - in F5B this returns whether uF or vG is divisible by B,
     @inbounds for i in eachindex(lmonoms)
     	lm = lmonoms[i]
     
-        if F_idx < indices[i] && divides(lm, F_sig, num_vars) 
+        if F_idx < indices[i] && divides(lm, F_sig) 
             return true
     	end #if
 
-        if G_idx < indices[i] && divides(lm, G_sig, num_vars)
+        if G_idx < indices[i] && divides(lm, G_sig)
             return true
     	end #if
 	end #for
@@ -106,7 +105,7 @@ Note - in F5B this returns whether vG is divisible by B,
     indices = syzygies.indices
     @inbounds for i in eachindex(lmonoms)
         lm = lmonoms[i]
-        if idx < indices[i] && divides(lm, sig, num_vars) # Division loop more likely to fail so check first
+        if idx < indices[i] && divides(lm, sig) # Division loop more likely to fail so check first
             return true
     	end #if
 	end #for
@@ -243,8 +242,8 @@ Returns whether F is 'rewritable' by G
         G_sig::GrLexMonomial,
         G_idx::Int,
         G_gen::Int,
-        num_vars::Int)::Bool where C
-    return F_gen < G_gen && G_idx == F_idx && divides(G_sig, F_sig, num_vars)
+        num_vars::Int)::Bool
+    return F_gen < G_gen && G_idx == F_idx && divides(G_sig, F_sig)
 end # rewritable
 
 """
@@ -266,7 +265,7 @@ function f5b_reduction( # TODO - Make this whole function mutate in-place!
 
         for (G_idx, G) in enumerate(B)
             iszero(G.poly) && continue
-            !divides(leading_monomial(G), leading_monomial(F), num_vars) && continue
+            !divides(leading_monomial(G), leading_monomial(F)) && continue
 
             v = div_multiple(leading_monomial(F), leading_monomial(G)) 
             #vG = v * G # TODO - DELAY COMPUTATION!

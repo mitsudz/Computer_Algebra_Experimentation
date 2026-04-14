@@ -19,7 +19,7 @@ function _polyrem(f::FastPoly{C}, divisors::Vector{FastPoly{C}}, num_vars::Int) 
         # Divide leading term by a divisor and update f
         for divisor in divisors
             lm_div = leading_monomial(divisor)
-            if divides(lm_div, lm_f, num_vars)
+            if divides(lm_div, lm_f)
                 found_divisor = true
                 coeff_ratio = leading_coefficient(f) // leading_coefficient(divisor)
                 f -= divisor * div_multiple(lm_f, lm_div) * coeff_ratio # TODO - make this in place
@@ -57,7 +57,7 @@ function _reduce_gb(G::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly{C}} 
     	redundant = false
     
     	for p in tempG 
-        	if divides(leading_monomial(p), lm_g, num_vars)
+        	if divides(leading_monomial(p), lm_g)
             	redundant = true
             	break
         	end #if
