@@ -10,7 +10,7 @@ include("multivar_poly_rep.jl")
 """
 Computes a remainder after multivariate polynomial division of `f` by the `divisors`.
 """
-function polyrem(f::FastPoly{C}, divisors::Vector{FastPoly{C}}, num_vars::Int) where C
+function _polyrem(f::FastPoly{C}, divisors::Vector{FastPoly{C}}, num_vars::Int) where C
     r = zero(f)
     while !iszero(f)
         lm_f = leading_monomial(f)
@@ -38,62 +38,43 @@ function polyrem(f::FastPoly{C}, divisors::Vector{FastPoly{C}}, num_vars::Int) w
 end # polyrem
 
 """
-Computes reduced (gröbner) basis. 
+Computes reduced gröbner basis. 
 Modifies input basis G in place.
+Returns reduced Grobner basis in ascending order of leading monomial.
+
+Precondition: G must be a Gröbner basis
 """
-function reduce_gb(G::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly{C}} where C
+function _reduce_gb(G::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly{C}} where C
 	G = filter!(p -> !iszero(p), G) # Remove 0 polynomials
+    isempty(G) && return G # Short circuit edge case
 
-	# Make all monic
-	map!( p -> p // leading_coefficient(p), G, G)
-    length(G) == 1 && return G # Short circuit edge case TODO - does length(G) == 0 matter?
-
+    # Create a minimal Gröbner basis
+    # (CLO) C2 S7 Lemma 3: LT(p) in LT<G/{p}> => G/{p} is still Gröbner.
     sort!(G, by = p -> leading_monomial(p))
+	tempG = FastPoly{C}[]
+    for g in G
+    	lm_g = leading_monomial(g)
+    	redundant = false
+    
+    	for p in tempG 
+        	if divides(leading_monomial(p), lm_g, num_vars)
+            	redundant = true
+            	break
+        	end #if
+    	end #for
+    
+    	!redundant && push!(tempG, g)
+	end #for
+	G = tempG
 
-	# Repeatedly reduce G until it is stable
-	while true
-		changed = false
+    # Create a reduced Gröbner basis
+    for i in 1:length(G)
+        G[i], G[end] = G[end], G[i]
+        G[end] = _polyrem(G[end], G[1:end-1], num_vars) # tail reduce
+        G[end] = G[end] // leading_coefficient(G[end]) # make monic
+        G[i], G[end] = G[end], G[i]
+    end #for
 
-        # gi -> gi ÷ (G - {gi})
-		i = 1
-		while i <= length(G)
-			G[i], G[end] = G[end], G[i]
-			temp = polyrem(G[end], G[1:end-1], num_vars)
-			if temp != G[end]
-				changed = true
-				G[end] = temp
-			end #if
-
-			# Remove redundant polynomial
-			if iszero(G[end])
-				changed = true
-				pop!(G)
-				continue
-			end #if
-
-            # Normalise
-			G[end] = G[end] // leading_coefficient(G[end])
-			removed = false
-			for j in 1:length(G)-1
-				if divides(leading_monomial(G[j]), leading_monomial(G[end]), num_vars)
-					changed = true
-					removed = true
-					pop!(G)
-					break
-				end #if
-			end #for
-			removed && continue
-			
-			# Swap back if we are keeping it
-			G[i], G[end] = G[end], G[i]
-			i += 1
-		end #while
-
-		
-		!changed && break
-	end #while
-
-	sort!(G, by=p -> leading_monomial(p))
 	return G
 end # reduce_gb
 

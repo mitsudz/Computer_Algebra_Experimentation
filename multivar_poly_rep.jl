@@ -8,6 +8,7 @@
 # TODO - error checking for more than 7 variables, debug mode add-ons if needed
 # TODO - use @inbounds for array accesses
 # TODO - scalar division would be useful for things other than rational (so we can to finite fields later)
+# TODO - tests need to be made more comprehensive
 
 using DynamicPolynomials
 
@@ -145,6 +146,7 @@ end
 @inline Base.:<(m1::GrLexMonomial, m2::GrLexMonomial) = m1.bits < m2.bits
 @inline Base.:>=(m1::GrLexMonomial, m2::GrLexMonomial) = m1.bits >= m2.bits
 @inline Base.:<=(m1::GrLexMonomial, m2::GrLexMonomial) = m1.bits <= m2.bits
+@inline Base.isless(m1::GrLexMonomial, m2::GrLexMonomial) = m1 < m2
 
 # --- Core Arithmetic ---
 
@@ -173,9 +175,18 @@ function Base.:+(p1::FastPoly{C}, p2::FastPoly{C}) where C
     return FastPoly(new_terms)
 end
 
-function Base.:-(p::FastPoly{C}, t::Term{C}) where C
-    # Simple subtraction of a single term
-    return p + FastPoly([Term(-t.coeff, t.mono)])
+@inline Base.:-(p1::FastPoly{C}, p2::FastPoly{C}) where C = p1 + (-p2)
+@inline Base.:-(p::FastPoly{C}) where C = (-1) * p
+
+@inline function Base.:+(p::FastPoly{C}, t::Term{C}) where C
+    iszero(t) && return p
+    return p + to_poly(t)
+end
+@inline Base.:+(t::Term{C}, p::FastPoly{C}) where C = p + t
+@inline Base.:-(t::Term{C}) where C = Term{C}(-t.coeff, t.mono)
+
+@inline function Base.:-(p::FastPoly{C}, t::Term{C}) where C
+    return p + (-t) 
 end
 
 @inline Base.:*(m1::GrLexMonomial, m2::GrLexMonomial) = GrLexMonomial(m1.bits + m2.bits)
@@ -218,7 +229,10 @@ end
 end
 @inline Base.:*(c::Number, p::FastPoly{C}) where C = p * c
 
-@inline Base.iszero(p::FastPoly) = isempty(p.terms)
+@inline Base.://(p::FastPoly{C1}, c::C2) where {C1, C2} = p * (1//c)
+
+@inline Base.iszero(p::FastPoly{C}) where C = isempty(p.terms)
+@inline Base.iszero(t::Term{C}) where C = iszero(t.coeff)
 
 # --- Conversion ---
 

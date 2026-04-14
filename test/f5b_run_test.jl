@@ -66,7 +66,7 @@ end
         fast_sys = [from_dynamic(C(1)p, vars) for p in sys]
         
         # Your F5B
-        my_gb = reduce_gb(converter(_f5b(fast_sys, num_vars)))
+        my_gb = converter(_f5b(fast_sys, num_vars))
         
         # Groebner.jl
         official_gb = Groebner.groebner(sys)
@@ -79,7 +79,7 @@ end
         sys = [C(1)p for p in sys]
         fast_sys = [from_dynamic(C(1)p, vars) for p in sys]
         
-        my_gb = reduce_gb(converter(_f5b(fast_sys, num_vars)))
+        my_gb = converter(_f5b(fast_sys, num_vars))
         
         # official_gb_1 = buchberger(sys) # TODO
         #check_ideal_equality(my_gb, official_gb_1, converter) # TODO
@@ -97,7 +97,7 @@ end
         sys = [C(1)p for p in sys]
         fast_sys = [from_dynamic(C(1)p, cvars) for p in sys]
         
-        my_gb = reduce_gb(converter(_f5b(fast_sys, 4)))
+        my_gb = converter(_f5b(fast_sys, 4))
         official_gb = Groebner.groebner(sys)
         
         @test my_gb == official_gb

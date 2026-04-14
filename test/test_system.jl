@@ -35,7 +35,38 @@ function generate_cyclic(n::Int)
     return [p * (big(1)//1) for p in system], x
 end
 
-c5, vars = generate_cyclic(5)
-=#
+c5, vars = generate_cyclic(5)=#
+
 
 # TODO - Try with Katsura after making some further improvements if we want to go past C5.
+
+function generate_katsura(n)
+    # We need n+1 variables: u0 to un
+    @polyvar u[1:n+1] # u[1] is u0, u[2] is u1, etc.
+    system = AbstractPolynomial[]
+
+    # Linear equation: u0 + 2*u1 + 2*u2... + 2*un - 1 = 0
+    linear_eq = u[1] + 2 * sum(u[2:end]) - 1
+    push!(system, linear_eq)
+
+    # Remaining n equations
+    for m in 0:n-1
+        # The formula: sum_{i=-n}^n u_{|i|} * u_{|m-i|} = u_m
+        # Because u_i = u_{-i}, we simplify to indices 0...n
+        term_sum = zero(u[1])
+        for i in -n:n
+            idx1 = abs(i) + 1
+            idx2 = abs(m - i) + 1
+
+            # Only add if the index is within our variable range [0, n]
+            if idx1 <= n+1 && idx2 <= n+1
+                term_sum += u[idx1] * u[idx2]
+            end
+        end
+        push!(system, term_sum - u[m+1])
+    end
+
+    return [p * (big(1)//1) for p in system], u
+end
+
+k5, vars = generate_katsura(5)

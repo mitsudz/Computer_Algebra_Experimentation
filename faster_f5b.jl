@@ -8,12 +8,17 @@
 
 # AI Use: Gemini 3 Flash - Code Writing & Debugging Assistance
 
-include("grobner_helpers.jl")
+include("reduce_gb.jl")
 include("multivar_poly_rep.jl")
 include("labelled_poly.jl")
 using DataStructures
 
-# TODO - Implement a bespoke reduction algorithm to avoid dealing with namespace issues (and it will be faster)
+# Online TODO Items:
+# 1. Add in lazy evaluations (decide which of the next two to try after doing that)
+# 2. Add in tail reductions
+# 3. Replace PQ and handle sugar & critical pairs
+
+# TODO - Consider using BitIntegers.jl to get more space for more polynomials
 # TODO - Make this a module soon to avoid namespace conflicts
 # TODO - Benchmark against old f5b and groebner and buchberger
 # TODO - Testing for correctness (unit test each part), Replace underlying representation, 
@@ -41,16 +46,15 @@ end
 =#
 
 """
-Computes a Grobner basis utilising the F5B algorithm and a bespoke polynomial representation.
+Computes a reduced Grobner basis utilising the F5B algorithm and a bespoke polynomial representation.
 
 Modifies given basis in place.
 
-Assumes `fast_basis` is already interreduced and sorted by total degree.
-
-NOTE: This does not utilise interreduction (see F5C paper for this).
+NOTE: This does not utilise interreduction (see F5C paper (Eder/Perry) for this).
 NOTE: See (Sun, Wang, 2010/11) for implementation details.
 """
 function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly{C}} where C
+    #fast_inital = _reduce_gb(fast_initial, num_vars) # occurs in-place # TODO - the new reduce requires a grobner basis
     m = length(fast_initial)
 
     # [(ei, fi) | i = 1,...,m]
@@ -97,7 +101,7 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
     end #while
 
     # Return the set of polynomials that form the Basis
-    return [Q.poly for Q in B if !iszero(Q.poly)]
+    return _reduce_gb([Q.poly for Q in B], num_vars)
 end # _f5b
 
 """
