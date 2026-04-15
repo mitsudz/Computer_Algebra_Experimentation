@@ -27,7 +27,8 @@ const DEBUG = false
 # TODO - Testing for correctness (unit test each part), Replace underlying representation, 
 # TODO - Replace PriorityQueue with something faster and more specialised
 # TODO - implement tail reduction, switch to mod p
-# TODO - Implement normal selection strategy properly (see F4/F5 or other papers - use REFERENCES!!!)
+# TODO - Implement normal selection strategy properly (see F4/F5 or other papers - use REFERENCES!!!) 
+#        "A New Efficient Algorithm for Computing Gröbner Bases" by Giovini, Mora, Niesi, Robbiano, and Traverso (1991).
 # TODO - use sizehint! on SyzygyPool
 # TODO - Add in speed ups to how much of the basis is passed in for things like the syzygy criterion etc.
 # TODO - Figure out a way to do more stuff in-place
@@ -36,6 +37,26 @@ const DEBUG = false
 # TODO - Decide on a naming convention for functions vs variables
 # TODO - why do I get two leaky criterion on cyclic 5?
 # TODO - Add a debug mode that can be handled via command line variables at compile time
+
+# --- Critical Pair Queue Logic --- #
+
+# TODO - Yuck naming
+struct CriticalPairQueueElem
+    sugar::Int
+    i::Int
+    j::Int
+end
+Base.isless(a::CriticalPairQueueElem, b::CriticalPairQueueElem) = a.sugar < b.sugar
+
+# TODO - Check whether sugar is working correctly - I think it's supposed to take the degree of the original basis p?
+#        "A New Efficient Algorithm for Computing Gröbner Bases" by Giovini, Mora, Niesi, Robbiano, and Traverso (1991).
+"""
+Get sugar degree of a critical pair (u, F, v, G)
+"""
+@inline function sugar(u::GrLexMonomial, F::FastPoly{C}, v::GrLexMonomial,  G::FastPoly{C}) where C
+    max(total_degree(u) + total_degree(F), total_degree(v) + total_degree(G))
+end
+
 
 # --- Syzygy Criterion Handling --- #
 
@@ -142,11 +163,11 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
     B = [LabelledPolynomial(i, identity_monomial(), f) for (i, f) in enumerate(fast_initial)]
 
     # Setup Priority Queue by Sugar Degree (Normal Selection Strategy)
-    CP = PriorityQueue{Tuple{Int, Int}, Int}()
+    CP = BinaryHeap{CriticalPairQueueElem}(Base.Order.Forward) # Min-Heap TODO - replace with bucket queue
     for i in 1:m
         for j in i+1:m
             u, v = critical_pair(B[i].poly, B[j].poly, num_vars)
-            enqueue!(CP, (i, j), sugar(u, B[i].poly, v, B[j].poly))
+            push!(CP, CriticalPairQueueElem(sugar(u, B[i].poly, v, B[j].poly), i, j))
         end #for
     end #for
 
@@ -157,7 +178,8 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
 
     # Main Loop
     while !isempty(CP)
-        (F_idx, G_idx) = dequeue!(CP) # XXX - Biggest time sink
+        cp = pop!(CP)
+        F_idx, G_idx = cp.i, cp.j
         F, G = B[F_idx], B[G_idx]
 
         u, v = critical_pair(F.poly, G.poly, num_vars) # TODO - MAKE IT SO THESE AREN'T RECOMPUTED
@@ -193,7 +215,7 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
                     iszero(B[i].poly) && continue
 
                     u_m, v_m = critical_pair(B[i].poly, B[new_idx].poly, num_vars)
-                    enqueue!(CP, (i, new_idx), sugar(u_m, B[i].poly, v_m, newP.poly))
+                    push!(CP, CriticalPairQueueElem(sugar(u_m, B[i].poly, v_m, newP.poly), i, new_idx))
                 end #for
             end #if
         end #if
@@ -303,14 +325,4 @@ function f5b_reduction( # TODO - Make this whole function mutate in-place!
     return F
 end # f5b_reduction
 
-
-# --- Critical Pair Queue Logic --- #
-
-# TODO - Check whether sugar is working correctly - I think it's supposed to take the degree of the original basis p?
-"""
-Get sugar degree of a critical pair (u, F, v, G)
-"""
-@inline function sugar(u::GrLexMonomial, F::FastPoly{C}, v::GrLexMonomial,  G::FastPoly{C}) where C
-    max(total_degree(u) + total_degree(F), total_degree(v) + total_degree(G))
-end
 
