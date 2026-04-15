@@ -40,13 +40,13 @@ end
         # Since 10 > 5, we check if F is rewritable by G
         # Note: Your function signature is rewritable(F, F_gen, G, G_gen)
         # So we pass F_gen_idx (10) as F_gen and i (5) as G_gen
-        @test rewritable(F.signature, F.index, F_gen_idx, G.signature, G.index, G_gen_idx, num_vars) == false # Because F_gen < G_gen is false
+        @test rewritable(F.signature, F.index, F_gen_idx, G.signature, G.index, G_gen_idx) == false # Because F_gen < G_gen is false
 
         
         # Correct direction: Is a NEWER polynomial (G_gen=10) rewritable by an OLDER one (F_gen=5)?
         # If the function is called as rewritable(uF, F_idx, LP, i...) 
         # F_gen is the index of the current pair in the loop, i is the basis index.
-        @test rewritable(F.signature, F.index, 5, G.signature, G.index, 10, num_vars) == true
+        @test rewritable(F.signature, F.index, 5, G.signature, G.index, 10) == true
     end
 
     @testset "rewritten_criterion" begin
@@ -68,7 +68,7 @@ end
         # To return true, F_gen must be < i.
         
         uF_low = quick_lp(2, [2, 0, 0], C(1)x1, vars)
-        @test rewritten_criterion(uF_low.signature, uF_low.index, vG.signature, vG.index, B_rewriting, 0, 6, num_vars) == true
+        @test rewritten_criterion(uF_low.signature, uF_low.index, vG.signature, vG.index, B_rewriting, 0, 6) == true
     end
 end
 
@@ -99,13 +99,13 @@ end
         sig_f = pack_exponents([2, 0, 0])
         idx_f = UInt16(0)
         
-        @test syzygy_criterion(pool, idx_f, sig_f, num_vars) == true
+        @test syzygy_criterion(pool, idx_f, sig_f) == true
 
         # Change index to 2. Now 2 > 1 (g1) and 2 < 5 (g2).
         # But sig_f (x1^2) is NOT divisible by g2.LM (x2).
         # So it should be false.
         idx_f_high = UInt16(2)
-        @test syzygy_criterion(pool, idx_f_high, sig_f, num_vars) == false
+        @test syzygy_criterion(pool, idx_f_high, sig_f) == false
     end
 
     @testset "Double Signature Check (S-Pairs)" begin
@@ -116,10 +116,10 @@ end
         vG_sig = pack_exponents([0, 0, 1])
         vG_idx = UInt16(10)
 
-        @test syzygy_criterion(pool, uF_idx, uF_sig, vG_idx, vG_sig, num_vars) == true
+        @test syzygy_criterion(pool, uF_idx, uF_sig, vG_idx, vG_sig) == true
 
         # Both safe
-        @test syzygy_criterion(pool, UInt16(10), uF_sig, UInt16(10), vG_sig, num_vars) == false
+        @test syzygy_criterion(pool, UInt16(10), uF_sig, UInt16(10), vG_sig) == false
     end
 
 	@testset "Edge Case: Boundary Indices" begin
@@ -128,9 +128,9 @@ end
     	sig_only_g1 = pack_exponents([1, 0, 0]) 
     
     	# If idx is 1, and pool index is 1: 1 < 1 is false.
-    	@test syzygy_criterion(pool, UInt16(1), sig_only_g1, num_vars) == false 
+    	@test syzygy_criterion(pool, UInt16(1), sig_only_g1) == false 
     
     	# If idx is 0, and pool index is 1: 0 < 1 is true.
-    	@test syzygy_criterion(pool, UInt16(0), sig_only_g1, num_vars) == true
+    	@test syzygy_criterion(pool, UInt16(0), sig_only_g1) == true
 	end
 end

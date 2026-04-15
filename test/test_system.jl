@@ -1,6 +1,6 @@
 using DynamicPolynomials, Groebner
 
-#=
+
 @polyvar x y z t u v
 
 f = (3//1)x^2 + 2x*y
@@ -11,9 +11,9 @@ g2 = (2//1)t - u
 h2 = (1//1)t^3*u^2 + v^2 + 5v^5*u^3*x^2 
 
 G = [f, g, h, f2, g2, h2]
-=#
 
 
+#=
 """
 Generates the Cyclic-n system.
 For 5 & 7 are regular, 4 & 6 are not
@@ -35,12 +35,12 @@ function generate_cyclic(n::Int)
     return [p * (big(1)//1) for p in system], x
 end
 
-c5, vars = generate_cyclic(5)
+c5, vars = generate_cyclic(5)=#
 
 
 # TODO - Try with Katsura after making some further improvements if we want to go past C5.
 
-#=
+
 function generate_katsura(n)
     # We need n+1 variables: u0 to un
     @polyvar u[1:n+1] # u[1] is u0, u[2] is u1, etc.
@@ -70,4 +70,4 @@ function generate_katsura(n)
     return [p * (big(1)//1) for p in system], u
 end
 
-k5, vars = generate_katsura(5)=#
+k5, vars = generate_katsura(5)

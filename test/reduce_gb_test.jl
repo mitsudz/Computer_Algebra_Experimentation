@@ -25,7 +25,7 @@ end
         # Ideal <x, y>. Set contains x^2 + y which is redundant because x | x^2.
         # DynamicPolynomials input -> Convert to FastPoly
         G1 = converter(rationalise([x, y, x^2 + y]))
-        red1 = _reduce_gb(G1, num_vars)
+        red1 = _reduce_gb(G1)
         expected = converter(rationalise([y, x]))
         
         @test red1 == expected
@@ -33,7 +33,7 @@ end
         # --- Test 2: Tail Reduction ---
         # G = {x + y, y} -> Reduced should be {x, y}
         G2 = converter(rationalise([x + y, y]))
-        red2 = _reduce_gb(copy(G2), num_vars)
+        red2 = _reduce_gb(copy(G2))
         expected = converter(rationalise([y, x]))
     
         @test red2 == expected
@@ -41,7 +41,7 @@ end
         # --- Test 3: Normalization ---
         # 3xy + 6z -> xy + 2z
         G3 = converter(rationalise([3x*y + 6z]))
-        red3 = _reduce_gb(copy(G3), num_vars)
+        red3 = _reduce_gb(copy(G3))
         expected = converter(rationalise([x*y + 2z]))
         
         @test red3 == expected
@@ -52,8 +52,8 @@ end
         G4_dyn = rationalise([x^2 - y, x*y - x, y^2 - y])
         G4 = converter(G4_dyn)
         
-        first_pass = _reduce_gb(copy(G4), num_vars)
-        second_pass = _reduce_gb(copy(first_pass), num_vars)
+        first_pass = _reduce_gb(copy(G4))
+        second_pass = _reduce_gb(copy(first_pass))
         
         @test first_pass == second_pass
         @test all(p -> leading_coefficient(p) == 1, second_pass)

@@ -10,7 +10,7 @@ include("multivar_poly_rep.jl")
 """
 Computes a remainder after multivariate polynomial division of `f` by the `divisors`.
 """
-function _polyrem(f::FastPoly{C}, divisors::Vector{FastPoly{C}}, num_vars::Int) where C
+function _polyrem(f::FastPoly{C}, divisors::Vector{FastPoly{C}}) where C
     r = zero(f)
     while !iszero(f)
         lm_f = leading_monomial(f)
@@ -44,7 +44,7 @@ Returns reduced Grobner basis in ascending order of leading monomial.
 
 Precondition: G must be a Gröbner basis
 """
-function _reduce_gb(G::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly{C}} where C
+function _reduce_gb(G::Vector{FastPoly{C}})::Vector{FastPoly{C}} where C
 	G = filter!(p -> !iszero(p), G) # Remove 0 polynomials
     isempty(G) && return G # Short circuit edge case
 
@@ -70,7 +70,7 @@ function _reduce_gb(G::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly{C}} 
     # Create a reduced Gröbner basis
     for i in 1:length(G)
         G[i], G[end] = G[end], G[i]
-        G[end] = _polyrem(G[end], G[1:end-1], num_vars) # tail reduce
+        G[end] = _polyrem(G[end], G[1:end-1]) # tail reduce
         G[end] = G[end] // leading_coefficient(G[end]) # make monic
         G[i], G[end] = G[end], G[i]
     end #for

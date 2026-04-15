@@ -35,7 +35,7 @@ end
         # F.sig (1, x2^2) > vG.sig (1, x2), so reduction should happen.
         F = LabelledPolynomial(1, pack_exponents([0, 2]), from_dynamic(C(1)x1*x2, vars))
         
-        reduced_F = f5b_reduction(F, B, syzygies, num_vars)
+        reduced_F = f5b_reduction(F, B, syzygies)
         
         # Verify g1.LM (x1) no longer divides the result's LM
         @test !divides(leading_monomial(g1.poly), leading_monomial(reduced_F.poly))
@@ -48,7 +48,7 @@ end
         # is_sig_greater(F, vG) will be false (they are equal).
         F = LabelledPolynomial(1, pack_exponents([0, 0]), from_dynamic(C(1)x1 + C(1)x2, vars))
         
-        reduced_F = f5b_reduction(F, B, syzygies, num_vars)
+        reduced_F = f5b_reduction(F, B, syzygies)
         
         @test reduced_F.poly == F.poly # No change because of signature rule
     end
@@ -89,7 +89,7 @@ end
         # vG.sig x2 is divisible by x2. vG.index 1 < 5.
         # HIT! Reduction should be blocked.
         
-        reduced_F2 = f5b_reduction(F, B, test_pool, num_vars)
+        reduced_F2 = f5b_reduction(F, B, test_pool)
         @test reduced_F2.poly == F.poly # Should remain unreduced due to syzygy hit
     end
 end
