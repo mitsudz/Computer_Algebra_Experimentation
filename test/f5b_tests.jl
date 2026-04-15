@@ -13,7 +13,7 @@ include("$TEST_DIR/labelled_poly_test.jl")
 println("\n\n--- F5B Criterion Tests ---")
 include("$TEST_DIR/f5b_criterion_test.jl")
 
-println("\n\n--- Critical Pair Queue Tests ---")
+println("\n\n--- Normal Selection Strategy Tests ---")
 #include("$TEST_DIR/critical_pair_test.jl") # TODO - Tests currently fail here
 
 println("\n\n--- F5B Run Tests ---")
