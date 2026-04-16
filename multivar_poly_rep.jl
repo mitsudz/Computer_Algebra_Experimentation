@@ -196,17 +196,18 @@ end
 
 @inline Base.:*(m1::GrLexMonomial, m2::GrLexMonomial) = GrLexMonomial(m1.bits + m2.bits)
 
-# Vectorized multiplication: scalar * monomial * poly
-@inline function Base.:*(p::FastPoly{C1}, t::Term{C2}) where {C1, C2}
-    PROMOTED_C = promote_type(C1, C2)
-    if iszero(t.coeff) 
-        return FastPoly(Term{PROMOTED_C}[]) 
-    end
+"""
+Vectorized multiplication: scalar * monomial * poly
 
-    new_terms = Term{PROMOTED_C}[
-        Term{PROMOTED_C}(t.coeff * pt.coeff, t.mono * pt.mono)
-        for pt in p.terms
-    ]
+Precondition: t.coeff can be cast directly to C1
+"""
+@inline function Base.:*(p::FastPoly{C1}, t::Term{C2}) where {C1, C2}
+    # PROMOTED_C = promote_type(C1, C2)
+    iszero(t.coeff) && return FastPoly(Term{}[]) 
+    coeff = C1(t.coeff)
+    mono = t.mono
+
+    new_terms = [Term{C1}(coeff * pt.coeff, mono * pt.mono) for pt in p.terms]
     
     return FastPoly(new_terms)
 end
@@ -222,15 +223,29 @@ end
 @inline Base.:*(c::GrLexMonomial, p::FastPoly{C}) where C = p * c
 
 # Vectorized multiplication: FastPoly * Scalar
+# TODO - This function currently is 27% of runtime - 
+#        Type stability is failing I think on line 228, and not being in-place is killing GC time
+#        Also let's not use map with a closure and do something such that the compiler can optimise better
+# TODO - Add tests to make sure of type stability - specifically that the output type is the same as p
+#        We should typecast c to C1 - no type promotion! If you want a big int type make it big int to start with
+#        Then add a convenience function to change the coefficient type instead!
+"""
+Scalar multiplication.
+
+Precondition: c can be cast to C1
+"""
 @inline function Base.:*(p::FastPoly{C1}, c::C2) where {C1, C2}
-    PROMOTED_C = promote_type(C1, C2)
-    iszero(c) && return FastPoly(Term{PROMOTED_C}[])
+    #PROMOTED_C = promote_type(C1, C2)
+    c = C1(c)
+    iszero(c) && return FastPoly(Term{C1}[])
 
-    new_terms = map(p.terms) do pt
+    #new_terms = map(pt -> Term{PROMOTED_C}(pt.coeff * c, pt.mono), p.terms)
+    new_terms = [Term{C1}(pt.coeff * c, pt.mono) for pt in p.terms]
+    #=new_terms = map(p.terms) do pt
         Term{PROMOTED_C}(pt.coeff * c, pt.mono)
-    end
+    end=#
 
-    return FastPoly{PROMOTED_C}(new_terms)
+    return FastPoly{C1}(new_terms)
 end
 @inline Base.:*(c::Number, p::FastPoly{C}) where C = p * c
 

@@ -16,9 +16,21 @@ using DataStructures
 const DEBUG = false
 
 # Online TODO Items:
-# 2. Replace PQ and handle sugar & critical pairs
-# 3. Add in tail reductions
-# 4. Add in a way to do initial inter-reduction (this was a 6x speedup for c5 not counting inter-reduction overhead)
+# 1. Correct ordering strategy (according to incremental F5)
+# 2. Inter-reduction (according to F5C)
+# 3. Tail reduction
+#
+# 1. Add in tail reduction
+# 2. Add in initial inter-reduction on FastPoly
+# 3. Add in in-place multiplication and addition (with sizehint!)
+# 4. Add in F5C inter-reduction by producing an incremental basis
+# 5. Make my code compatible with AbstractAlgebra
+# 6. Restructure rewritten criterion pool to have separate vectors per syzygy index (array of arrays or dict of arrays)
+#    Ensure this maintains the same generation order to enable 6.
+# 7. Update rewritten criterion to only look at polynomials generated later (ie, don't even check polynomials generated
+#    earlier).
+# NOTE - 6/7 are taking significantly less of the time than the first 4 points.
+# READING - Read F5C and Sun/Wang section 5 on incremental F5 to understand the appropriate selection strategy.
 
 # TODO - Consider using BitIntegers.jl to get more space for more polynomials
 # TODO - Consider applying criterion BEFORE adding to the queue - if we do this in the right way, we should only
@@ -98,14 +110,17 @@ Note - in F5B this returns whether uF or vG is divisible by B,
     )
     lmonoms = syzygies.lmonoms # The leading monomial of some polynomial
     indices = syzygies.indices
-    @inbounds for i in eachindex(lmonoms)
-    	lm = lmonoms[i]
+    num_syz = length(lmonoms)
+    @inbounds for i in 1:num_syz
+        idx = indices[i] 
+        # Not sure if this actually affects performance, but delayed access to lmonoms
+        # seems to improve cache lines (I think)
     
-        if F_idx < indices[i] && divides(lm, F_sig) 
+        if F_idx < idx && divides(lmonoms[i], F_sig) 
             return true
     	end #if
 
-        if G_idx < indices[i] && divides(lm, G_sig)
+        if G_idx < idx && divides(lmonoms[i], G_sig)
             return true
     	end #if
 	end #for
@@ -161,7 +176,8 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
     m = length(fast_initial)
 
     # [(ei, fi) | i = 1,...,m]
-    B = [LabelledPolynomial(i, identity_monomial(), f) for (i, f) in enumerate(fast_initial)]
+    # TODO - Do I need to do LabelledPolynomial{C}? Type stability is failing somewhere.
+    B = [LabelledPolynomial{C}(i, identity_monomial(), f) for (i, f) in enumerate(fast_initial)]
 
     # Setup Priority Queue by Sugar Degree (Normal Selection Strategy)
     CP = BinaryHeap{CriticalPairQueueElem}(Base.Order.Forward) # Min-Heap TODO - replace with bucket queue
@@ -178,7 +194,14 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
 	syzygies = SyzygyPool(lms, idxs)
 
     # Main Loop
+    changed = false # Debug
     while !isempty(CP)
+        # Debug
+        if length(B) % 100 == 0 && changed
+            println("Size of current basis: $(length(B))")
+            changed = false
+        end
+
         cp = pop!(CP)
         F_idx, G_idx = cp.i, cp.j
         F, G = B[F_idx], B[G_idx]
@@ -200,7 +223,9 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
 
             newP = f5b_reduction(SP, B, syzygies)
             push!(B, newP) # Irrespective of whether the new labelled polynomial is zero
-            #(DEBUG && iszero(newP.poly)) && println("WARNING: leaky criterion") 
+
+            iszero(newP.poly) && println("WARNING: leaky criterion") # Debug
+            changed = true # Debug
 
             # Add new pairs
             if !iszero(newP.poly)
