@@ -16,9 +16,9 @@ using DataStructures
 const DEBUG = false
 
 # Online TODO Items:
-# 1. Correct ordering strategy (according to incremental F5)
-# 2. Inter-reduction (according to F5C)
-# 3. Tail reduction
+# 1. Inter-reduction (according to F5C)
+# 2. Tail reduction
+# 3. In-place low level operations and sizehinting to avoid garbage collection and memory allocator issues
 #
 # 1. Add in tail reduction
 # 2. Add in initial inter-reduction on FastPoly
@@ -176,17 +176,26 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
     m = length(fast_initial)
 
     # [(ei, fi) | i = 1,...,m]
-    # TODO - Do I need to do LabelledPolynomial{C}? Type stability is failing somewhere.
     B = [LabelledPolynomial{C}(i, identity_monomial(), f) for (i, f) in enumerate(fast_initial)]
 
     # Setup Priority Queue by Sugar Degree (Normal Selection Strategy)
-    CP = BinaryHeap{CriticalPairQueueElem}(Base.Order.Forward) # Min-Heap TODO - replace with bucket queue
+    # And also use incrementalF5 (reference original F5 paper) order
+    CPQ_list = [BinaryHeap{CriticalPairQueueElem}(Base.Order.Forward) for _ in 1:m]
+    for i in 1:m
+        for j in i+1:m
+            u, v = critical_pair(B[i].poly, B[j].poly, num_vars)
+            push!(CPQ_list[i], CriticalPairQueueElem(sugar(u, B[i].poly, v, B[j].poly), i, j))
+        end #for
+    end #for
+    
+    #=
+    CP = BinaryHeap{CriticalPairQueueElem}(Base.Order.Forward) # Min-Heap TODO - replace with bucket queue if speed bad
     for i in 1:m
         for j in i+1:m
             u, v = critical_pair(B[i].poly, B[j].poly, num_vars)
             push!(CP, CriticalPairQueueElem(sugar(u, B[i].poly, v, B[j].poly), i, j))
         end #for
-    end #for
+    end #for=#
 
     # Set up for Syzygy Criterion
     lms = GrLexMonomial[leading_monomial(LP.poly) for LP in B]
@@ -195,52 +204,59 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
 
     # Main Loop
     changed = false # Debug
-    while !isempty(CP)
-        # Debug
-        if length(B) % 100 == 0 && changed
-            println("Size of current basis: $(length(B))")
-            changed = false
-        end
+    for k in m:-1:1 # currently computing Grobner basis of <fk,...,fm> from inputs
+        #while !isempty(CP) # TODO - REMOVE old CP
+        while !isempty(CPQ_list[k])
+            # Debug
+            if length(B) % 100 == 0 && changed
+                println("Size of current basis: $(length(B))")
+                changed = false
+            end
 
-        cp = pop!(CP)
-        F_idx, G_idx = cp.i, cp.j
-        F, G = B[F_idx], B[G_idx]
+            #cp = pop!(CP) # TODO - REMOVE old CP
+            cp = pop!(CPQ_list[k])
+            F_idx, G_idx = cp.i, cp.j
+            F, G = B[F_idx], B[G_idx]
 
-        u, v = critical_pair(F.poly, G.poly, num_vars) # TODO - MAKE IT SO THESE AREN'T RECOMPUTED
-        uF_sig = F.signature * u
-        vG_sig = G.signature * v
+            u, v = critical_pair(F.poly, G.poly, num_vars) # TODO - MAKE IT SO THESE AREN'T RECOMPUTED
+            uF_sig = F.signature * u
+            vG_sig = G.signature * v
 
-        # Avoid Signature Drop - see Sun/Wang 2010/2011 for why this can be skipped
-        F.index == G.index && uF_sig == vG_sig && continue
+            # Avoid Signature Drop - see Sun/Wang 2010/2011 for why this can be skipped
+            F.index == G.index && uF_sig == vG_sig && continue
 
 
-        if ( !syzygy_criterion(syzygies,
-                               UInt16(F.index), uF_sig,
-                               UInt16(G.index), vG_sig
-                              ) && 
-            !rewritten_criterion(uF_sig, F.index, vG_sig, G.index, B, F_idx, G_idx) )
-            SP = ((F*u) // leading_coefficient(F.poly)) - ((G*v) // leading_coefficient(G.poly)) # S-polynomial
+            if ( !syzygy_criterion(syzygies,
+                                   UInt16(F.index), uF_sig,
+                                   UInt16(G.index), vG_sig
+                                  ) && 
+                !rewritten_criterion(uF_sig, F.index, vG_sig, G.index, B, F_idx, G_idx) )
+                SP = ((F*u) // leading_coefficient(F.poly)) - ((G*v) // leading_coefficient(G.poly)) # S-polynomial
 
-            newP = f5b_reduction(SP, B, syzygies)
-            push!(B, newP) # Irrespective of whether the new labelled polynomial is zero
+                newP = f5b_reduction(SP, B, syzygies)
+                push!(B, newP) # Irrespective of whether the new labelled polynomial is zero
 
-            iszero(newP.poly) && println("WARNING: leaky criterion") # Debug
-            changed = true # Debug
+                iszero(newP.poly) && println("WARNING: leaky criterion") # Debug
+                changed = true # Debug
 
-            # Add new pairs
-            if !iszero(newP.poly)
-                update_syz_pool(syzygies, leading_monomial(newP.poly), UInt16(newP.index))
+                # Add new pairs
+                if !iszero(newP.poly)
+                    update_syz_pool(syzygies, leading_monomial(newP.poly), UInt16(newP.index))
 
-                new_idx = length(B)
-                for i in 1:(new_idx - 1)
-                    iszero(B[i].poly) && continue
+                    new_idx = length(B)
+                    for i in 1:(new_idx - 1)
+                        iszero(B[i].poly) && continue
 
-                    u_m, v_m = critical_pair(B[i].poly, B[new_idx].poly, num_vars)
-                    push!(CP, CriticalPairQueueElem(sugar(u_m, B[i].poly, v_m, newP.poly), i, new_idx))
-                end #for
+                        # TODO - Consider applying syzygy criterion here
+                        u_m, v_m = critical_pair(B[i].poly, newP.poly, num_vars)
+                        crit_k = min(B[i].index, newP.index) # must be <= k
+                        # TODO - make this^ an assertion if things are weird
+                        push!(CPQ_list[crit_k], CriticalPairQueueElem(sugar(u_m, B[i].poly, v_m, newP.poly), i, new_idx))
+                    end #for
+                end #if
             end #if
-        end #if
-    end #while
+        end #while
+    end #for
 
     # Return the set of polynomials that form the Basis
     return _reduce_gb([Q.poly for Q in B])
@@ -309,7 +325,6 @@ function f5b_reduction( # TODO - Make this whole function mutate in-place!
             !divides(leading_monomial(G), leading_monomial(F)) && continue
 
             v = div_multiple(leading_monomial(F), leading_monomial(G)) 
-            #vG = v * G # TODO - DELAY COMPUTATION!
             vG_sig = v * G.signature
 
             !is_sig_greater(F.signature, F.index, vG_sig, G.index) && continue
@@ -330,7 +345,9 @@ function f5b_reduction( # TODO - Make this whole function mutate in-place!
             # TODO - Make it so all polynomials are monic by the time the enter the basis
             c = leading_coefficient(F.poly) / leading_coefficient(G.poly)
 
-            # TODO - IN-PLACE SUBTRACTION!
+            # TODO - in-place subtraction! THIS IS NOW THE MOST INEFFICIENT PART OTHER THAN INTER-REDUCTION!
+            # 60% OF ALGORITHM TIME IS IN THE ADDITION THAT IS GENERATED BETWEEN FAST_POLY IN THE FOLLOWING
+            # SPECIFICALLY IN ALLOCATING MEMORY AND HANDLING THE GARBAGE COLLECTOR!
             F = F - (c * (v * G))
             reduced = true
             break
