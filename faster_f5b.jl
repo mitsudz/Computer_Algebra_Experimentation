@@ -209,7 +209,17 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
     # Main Loop
     #changed = false # Debug
     for k in m:-1:1 # currently computing Grobner basis of <f_k,...,f_m> from inputs
-        #println("k = $k\n")
+        # Recreate Critical Pairs
+        # NOTE: we know Spol(B[i], B[j]) reduces to 0 for all i, j >= k (since we have a reduce basis for
+        # {f_k,...,f_m}. Thus, we can just add critical pairs for (f_{k-1}, f_i) for i >= k
+        f_kminus1 = B[k-1].poly
+        for i in k:length(B)
+            iszero(f_kminus1) || iszero(B[i].poly) && continue
+            u, v = critical_pair(f_kminus1, B[i].poly, num_vars)
+            push!(CPQ_list[k-1], CriticalPairQueueElem(sugar(u, f_kminus1, v, B[i].poly), k-1, i))
+        end #for
+        
+        #println("k = $k\n") # Debug
         # NOTE: <f_m> is a reduced Grobner basis
         while !isempty(CPQ_list[k])
             # Debug
@@ -271,7 +281,9 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
         #        and the critical pair stuff can be removed
         k == 1 && break
 
-
+        # TODO - CURRENTLY OVERHEAD OF REDUCE_GB AND SPECIFICALLY SUBTRACTION IS WORSE THAN NOT IMPLEMENTING
+        #        F5C. I SHOULD FIX SUBTRACTION AND THEN SEE IF F5C ACTUALLY IMPROVES THINGS!
+        #=
         # Inter-reduction F5C
         # The current basis is {f_1,...,f_{k-1}, g_1,...,g_l} where f_i are elements of the original basis
         # and g_j are a (non-reduced) basis of {f_k,...,f_m}.
@@ -280,23 +292,26 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
         B_red = [LabelledPolynomial{C}(k+i-1, identity_monomial(), f) for (i, f) in enumerate(P_red)]
         B = append!(B_non_red, B_red)
 
+        # Recreate Syzygyies
+        clear_syz_pool(syzygies)
+        for F in B
+            update_syz_pool(syzygies, leading_monomial(F.poly), UInt16(F.index))
+        end=#
+
+        #=
         # Recreate Critical Pairs
         # NOTE: we know Spol(B[i], B[j]) reduces to 0 for all i, j >= k (since we have a reduce basis for
         # {f_k,...,f_m}. Thus, we can just add critical pairs for (f_{k-1}, f_i) for i >= k
         f_kminus1 = B[k-1].poly
         for i in k:length(B)
+            iszero(f_kminus1) || iszero(B[i].poly) && continue
             u, v = critical_pair(f_kminus1, B[i].poly, num_vars)
             push!(CPQ_list[k-1], CriticalPairQueueElem(sugar(u, f_kminus1, v, B[i].poly), k-1, i))
-        end #for
+        end #for=#
 
-        # Recreate Syzygyies
-        clear_syz_pool(syzygies)
-        for F in B
-            update_syz_pool(syzygies, leading_monomial(F.poly), UInt16(F.index))
-        end
         # TODO - FIX HOW CRITICAL PAIR QUEUE IS HANDLED SUCH THAT THE CRITICAL PAIRS ARE ADDED LATER 
         #        AND INSIDE THE WHILE LOOP THEY ARE ONLY ADDED FOR ELEMENTS IN THE CURRENT Gi
-        #println("Size of REDUCED basis: $(length(B))")
+        #println("Size of REDUCED basis: $(length(B))") # Debug
     end #for
 
     # Return the set of polynomials that form the Basis
