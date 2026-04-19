@@ -17,8 +17,8 @@ const DEBUG = false
 
 # Online TODO Items:
 # 1. Inter-reduction (according to F5C)
-# 2. Tail reduction
 # 3. In-place low level operations and sizehinting to avoid garbage collection and memory allocator issues
+# 3. Tail reduction
 #
 # 1. Add in tail reduction
 # 2. Add in initial inter-reduction on FastPoly
@@ -84,6 +84,7 @@ end
 struct SyzygyPool
     lmonoms::Vector{GrLexMonomial} # This should compile to Vector{UInt128} TODO - @assert isbitstype(sigs) - should keep cache lines hot
     indices::Vector{UInt16} # We assume we never have more than 2^16 initial generators
+    # TODO - Check if Int is just faster anyway or same speed
 
     function SyzygyPool(l, i)
         @assert isbitstype(GrLexMonomial) "GrLexMonomial must be a bitstype for performance!"
@@ -94,6 +95,11 @@ end
 @inline function update_syz_pool(syzygies::SyzygyPool, lm::GrLexMonomial, idx::UInt16)
     push!(syzygies.lmonoms, lm)
     push!(syzygies.indices, idx)
+end
+
+@inline function clear_syz_pool(syzygies::SyzygyPool)
+    empty!(syzygies.lmonoms)
+    empty!(syzygies.indices)
 end
 
 """
@@ -172,48 +178,46 @@ NOTE: This does not utilise interreduction (see F5C paper (Eder/Perry) for this)
 NOTE: See (Sun, Wang, 2010/11) for implementation details.
 """
 function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly{C}} where C
+    # TODO - modularise this function - it is big
     #fast_inital = _reduce_gb(fast_initial) # occurs in-place # TODO - the new reduce requires a grobner basis
     m = length(fast_initial)
+    fast_initial = reverse(fast_initial) 
+    # TODO - ^THIS MADE A HUGE SPEED UP, CREATE A BETTER INITIAL INTER-REDUCTION! ESSENTIALLY WE COMPUTE WITH 
+    #        SMALLER POLYNOMIALS NOT THE LARGER ONES!
 
     # [(ei, fi) | i = 1,...,m]
     B = [LabelledPolynomial{C}(i, identity_monomial(), f) for (i, f) in enumerate(fast_initial)]
 
     # Setup Priority Queue by Sugar Degree (Normal Selection Strategy)
     # And also use incrementalF5 (reference original F5 paper) order
+    # TODO - NEED TO PUSH INITIAL CRITICAL PAIR QUEUE DIFFERENTLY SO WE ONLY REDUCE ONE BASIS Gi AT A TIME!
     CPQ_list = [BinaryHeap{CriticalPairQueueElem}(Base.Order.Forward) for _ in 1:m]
+    #=
     for i in 1:m
         for j in i+1:m
             u, v = critical_pair(B[i].poly, B[j].poly, num_vars)
             push!(CPQ_list[i], CriticalPairQueueElem(sugar(u, B[i].poly, v, B[j].poly), i, j))
         end #for
     end #for
+    =#
     
-    #=
-    CP = BinaryHeap{CriticalPairQueueElem}(Base.Order.Forward) # Min-Heap TODO - replace with bucket queue if speed bad
-    for i in 1:m
-        for j in i+1:m
-            u, v = critical_pair(B[i].poly, B[j].poly, num_vars)
-            push!(CP, CriticalPairQueueElem(sugar(u, B[i].poly, v, B[j].poly), i, j))
-        end #for
-    end #for=#
-
     # Set up for Syzygy Criterion
     lms = GrLexMonomial[leading_monomial(LP.poly) for LP in B]
 	idxs = UInt16[UInt16(LP.index) for LP in B]
 	syzygies = SyzygyPool(lms, idxs)
 
     # Main Loop
-    changed = false # Debug
-    for k in m:-1:1 # currently computing Grobner basis of <fk,...,fm> from inputs
-        #while !isempty(CP) # TODO - REMOVE old CP
+    #changed = false # Debug
+    for k in m:-1:1 # currently computing Grobner basis of <f_k,...,f_m> from inputs
+        #println("k = $k\n")
+        # NOTE: <f_m> is a reduced Grobner basis
         while !isempty(CPQ_list[k])
             # Debug
-            if length(B) % 100 == 0 && changed
+            #=if length(B) % 100 == 0 && changed
                 println("Size of current basis: $(length(B))")
                 changed = false
-            end
+            end=#
 
-            #cp = pop!(CP) # TODO - REMOVE old CP
             cp = pop!(CPQ_list[k])
             F_idx, G_idx = cp.i, cp.j
             F, G = B[F_idx], B[G_idx]
@@ -236,26 +240,63 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
                 newP = f5b_reduction(SP, B, syzygies)
                 push!(B, newP) # Irrespective of whether the new labelled polynomial is zero
 
-                iszero(newP.poly) && println("WARNING: leaky criterion") # Debug
-                changed = true # Debug
+                #iszero(newP.poly) && println("WARNING: leaky criterion") # Debug
+                #changed = true # Debug
 
                 # Add new pairs
                 if !iszero(newP.poly)
                     update_syz_pool(syzygies, leading_monomial(newP.poly), UInt16(newP.index))
 
                     new_idx = length(B)
-                    for i in 1:(new_idx - 1)
+                    #for i in 1:(new_idx - 1) # TODO - MAKE THIS k:(new_idx - 1)
+                    for i in k:(new_idx - 1) 
                         iszero(B[i].poly) && continue
 
                         # TODO - Consider applying syzygy criterion here
                         u_m, v_m = critical_pair(B[i].poly, newP.poly, num_vars)
                         crit_k = min(B[i].index, newP.index) # must be <= k
                         # TODO - make this^ an assertion if things are weird
-                        push!(CPQ_list[crit_k], CriticalPairQueueElem(sugar(u_m, B[i].poly, v_m, newP.poly), i, new_idx))
+                        push!(
+                              CPQ_list[crit_k], 
+                              CriticalPairQueueElem(sugar(u_m, B[i].poly, v_m, newP.poly), 
+                                                    i, new_idx
+                                                   )
+                             )
                     end #for
                 end #if
             end #if
         end #while
+
+        # TODO - Move critical pair stuff to the start of the loop and then this line
+        #        and the critical pair stuff can be removed
+        k == 1 && break
+
+
+        # Inter-reduction F5C
+        # The current basis is {f_1,...,f_{k-1}, g_1,...,g_l} where f_i are elements of the original basis
+        # and g_j are a (non-reduced) basis of {f_k,...,f_m}.
+        B_non_red = B[1:k-1]
+        P_red = _reduce_gb([Q.poly for Q in B[k:end]])
+        B_red = [LabelledPolynomial{C}(k+i-1, identity_monomial(), f) for (i, f) in enumerate(P_red)]
+        B = append!(B_non_red, B_red)
+
+        # Recreate Critical Pairs
+        # NOTE: we know Spol(B[i], B[j]) reduces to 0 for all i, j >= k (since we have a reduce basis for
+        # {f_k,...,f_m}. Thus, we can just add critical pairs for (f_{k-1}, f_i) for i >= k
+        f_kminus1 = B[k-1].poly
+        for i in k:length(B)
+            u, v = critical_pair(f_kminus1, B[i].poly, num_vars)
+            push!(CPQ_list[k-1], CriticalPairQueueElem(sugar(u, f_kminus1, v, B[i].poly), k-1, i))
+        end #for
+
+        # Recreate Syzygyies
+        clear_syz_pool(syzygies)
+        for F in B
+            update_syz_pool(syzygies, leading_monomial(F.poly), UInt16(F.index))
+        end
+        # TODO - FIX HOW CRITICAL PAIR QUEUE IS HANDLED SUCH THAT THE CRITICAL PAIRS ARE ADDED LATER 
+        #        AND INSIDE THE WHILE LOOP THEY ARE ONLY ADDED FOR ELEMENTS IN THE CURRENT Gi
+        #println("Size of REDUCED basis: $(length(B))")
     end #for
 
     # Return the set of polynomials that form the Basis
