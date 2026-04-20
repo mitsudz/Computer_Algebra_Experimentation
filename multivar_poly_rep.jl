@@ -20,7 +20,7 @@ using DynamicPolynomials
 const BITS_PER_VAR = 16
 const TOTAL_BITS = 128
 const MAX_EXP = (1 << BITS_PER_VAR) - 1
-const OVERFLOW_MASK = 0x80808080808080808080808080808080 # Every 16th bit set 
+const OVERFLOW_MASK = 0x80008000800080008000800080008000 # Every 16th bit set 
 
 # --- Packed Bit Representation for Monomial in Graded Lexical Order (see Maple TODO - REF)
 

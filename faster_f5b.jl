@@ -16,14 +16,10 @@ using DataStructures
 const DEBUG = false
 
 # Online TODO Items:
-# 1. Inter-reduction (according to F5C)
-# 3. In-place low level operations and sizehinting to avoid garbage collection and memory allocator issues
 # 3. Tail reduction
 #
-# 1. Add in tail reduction
 # 2. Add in initial inter-reduction on FastPoly
-# 3. Add in in-place multiplication and addition (with sizehint!)
-# 4. Add in F5C inter-reduction by producing an incremental basis
+# 3. Add in in-place multiplication and addition 
 # 5. Make my code compatible with AbstractAlgebra
 # 6. Restructure rewritten criterion pool to have separate vectors per syzygy index (array of arrays or dict of arrays)
 #    Ensure this maintains the same generation order to enable 6.
@@ -178,7 +174,7 @@ Modifies given basis in place.
 NOTE: This does not utilise interreduction (see F5C paper (Eder/Perry) for this).
 NOTE: See (Sun, Wang, 2010/11) for implementation details.
 """
-function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly{C}} where C
+function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int) where C
     # TODO - modularise this function - it is big
     #fast_inital = _reduce_gb(fast_initial) # occurs in-place # TODO - the new reduce requires a grobner basis
     m = length(fast_initial)
@@ -202,6 +198,14 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
     # Main Loop
     changed = false # Debug
     for k in m:-1:1 # currently computing Grobner basis of <f_k,...,f_m> from inputs
+        #=if k != m
+            B[k] = LabelledPolynomial{C}(k,
+                                           identity_monomial(),
+                                           _polyrem(B[k].poly, [Q.poly for Q in B[k+1:end]]))
+        end=#
+        #=if k == 3
+            return B[k:end]
+        end=#
         u_1_count = 0
 
         # Recreate Critical Pairs
@@ -267,15 +271,11 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
             uF_sig = F.signature * u
             vG_sig = G.signature * v
 
+            #=if u == identity_monomial() || v == identity_monomial()
+                continue
+            end=#
             # Avoid Signature Drop - see Sun/Wang 2010/2011 for why this can be skipped
             F.index == G.index && uF_sig == vG_sig && continue
-
-            # Debug
-            if u == identity_monomial() || v == identity_monomial()
-                # Should this be caught by the rewritten criterion
-                #println("Signature potentially unchanged!")
-            end
-
             
             # TODO - Duplicate signatures should be caught by the rewritten criterion, why aren't they?
             if ( !syzygy_criterion(syzygies,
@@ -299,12 +299,20 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
                     update_syz_pool(syzygies, leading_monomial(newP.poly), UInt16(newP.index))
 
                     new_idx = length(B)
-                    #for i in 1:(new_idx - 1) # TODO - MAKE THIS k:(new_idx - 1)
                     for i in k:(new_idx - 1) 
                         iszero(B[i].poly) && continue
 
                         # TODO - Consider applying syzygy criterion here
                         u_m, v_m = critical_pair(B[i].poly, newP.poly, num_vars)
+                        #=if (syzygy_criterion(syzygies,
+                                   UInt16(k), v_m * newP.signature,
+                                   UInt16(B[i].index), u_m * B[i].signature 
+                                  ) ||
+                        rewritten_criterion(v_m * newP.signature, k,
+                                            u_m * B[i].signature, B[i].index, B,
+                                            length(B), i) )
+                            continue
+                        end=#
 
                         push!(
                               CPQ_list[k], 
@@ -331,6 +339,7 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
         for F in B
             update_syz_pool(syzygies, leading_monomial(F.poly), UInt16(F.index))
         end
+
         # --- END F5C INTER-REDUCTION --- 
         
         println("Size of REDUCED basis: $(length(B))") # Debug
