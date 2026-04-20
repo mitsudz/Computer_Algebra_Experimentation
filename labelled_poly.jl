@@ -15,10 +15,14 @@ struct LabelledPolynomial{C}
     poly::FastPoly{C}
 end
 
+function Base.:(==)(LP1::LabelledPolynomial{C}, LP2::LabelledPolynomial{C}) where C
+    return LP1.index == LP2.index && LP1.signature == LP2.signature && LP1.poly == LP2.poly
+end
+
 """
 Signature comparison logic for F5.
 In F5, (S1, i) > (S2, j) if:
-1. i < j  (Lower index is 'older' and thus greater in some F5 variations)
+1. i < j  (Lower index is 'newer' and thus greater in some F5 variations)
 2. i == j and S1 > S2 (Standard monomial order comparison)
 """
 @inline function is_sig_greater(LP1::LabelledPolynomial, LP2::LabelledPolynomial)
@@ -77,8 +81,16 @@ Precondition: LP1.signature != LP2.signature (otherwise infinite recursion)
     return LabelledPolynomial(LP2.index, LP2.signature, LP1.poly + LP2.poly)
 end
 
+"""
+Subtraction of two LabelledPolynomials.
+The signature of the sum is the maximum of the two input signatures.
+
+Precondition: LP1.signature != LP2.signature (otherwise infinite recursion)
+"""
 @inline function Base.:-(LP1::LabelledPolynomial{C}, LP2::LabelledPolynomial{C}) where C
-    return LP1 + (LP2 * (-1))
+    is_sig_greater(LP1, LP2) && return LabelledPolynomial(LP1.index, LP1.signature, LP1.poly - LP2.poly)
+    return LabelledPolynomial(LP2.index, LP2.signature, LP1.poly - LP2.poly)
+    #return LP1 + (LP2 * (-1)) # TODO - THIS IS APPARENTLY SLOW BECAUSE OF THE POLYNOMIAL MULTIPLICATION!!!
 end
 
 @inline function Base.:-(LP::LabelledPolynomial{C}) where C

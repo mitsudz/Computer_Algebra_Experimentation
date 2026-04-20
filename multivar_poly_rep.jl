@@ -10,6 +10,7 @@
 # TODO - scalar division would be useful for things other than rational (so we can to finite fields later)
 # TODO - tests need to be made more comprehensive
 # TODO - can num_vars become a value type?
+# TODO - URGENT - ADD SUPPORT FOR IN-PLACE OPERATIONS AND PRE-ALLOCATE MEMORY FOR ADDITION!
 
 
 using DynamicPolynomials
@@ -158,8 +159,9 @@ end
 # Addition/Subtraction via a Merge-sort style update
 function Base.:+(p1::FastPoly{C}, p2::FastPoly{C}) where C
     new_terms = Term{C}[]
+    sizehint!(new_terms, length(p1.terms) + length(p2.terms))
     i, j = 1, 1
-    while i <= length(p1.terms) && j <= length(p2.terms)
+    @inbounds while i <= length(p1.terms) && j <= length(p2.terms)
         m1, m2 = p1.terms[i].mono.bits, p2.terms[j].mono.bits
         if m1 == m2
             c = p1.terms[i].coeff + p2.terms[j].coeff
@@ -175,8 +177,8 @@ function Base.:+(p1::FastPoly{C}, p2::FastPoly{C}) where C
             j += 1
         end
     end
-    append!(new_terms, p1.terms[i:end])
-    append!(new_terms, p2.terms[j:end])
+    append!(new_terms, @view p1.terms[i:end]) # Use @view to not create a new copy during array splicing
+    append!(new_terms, @view p2.terms[j:end])
     return FastPoly(new_terms)
 end
 
@@ -214,10 +216,11 @@ end
 @inline Base.:*(c::Term{C1}, p::FastPoly{C2}) where {C1, C2} = p * c
 
 @inline function Base.:*(p::FastPoly{C}, m::GrLexMonomial) where C
-    new_terms = Term{C}[
-        Term{C}(pt.coeff, m * pt.mono)
-        for pt in p.terms
-    ]
+    new_terms = Term{C}[]
+    sizehint!(new_terms, length(p.terms))
+    for pt in p.terms
+        push!(new_terms, Term{C}(pt.coeff, m * pt.mono))
+    end
     return FastPoly(new_terms) 
 end
 @inline Base.:*(c::GrLexMonomial, p::FastPoly{C}) where C = p * c
@@ -240,7 +243,12 @@ Precondition: c can be cast to C1
     iszero(c) && return FastPoly(Term{C1}[])
 
     #new_terms = map(pt -> Term{PROMOTED_C}(pt.coeff * c, pt.mono), p.terms)
-    new_terms = [Term{C1}(pt.coeff * c, pt.mono) for pt in p.terms]
+    new_terms = Term{C1}[]
+    sizehint!(new_terms, length(p.terms))
+    for pt in p.terms
+        push!(new_terms, Term{C1}(pt.coeff * c, pt.mono))
+    end
+    #new_terms = [Term{C1}(pt.coeff * c, pt.mono) for pt in p.terms]
     #=new_terms = map(p.terms) do pt
         Term{PROMOTED_C}(pt.coeff * c, pt.mono)
     end=#

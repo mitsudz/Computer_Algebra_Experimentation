@@ -16,7 +16,7 @@ h2 = (1//1)t^3*u^2 + v^2 + 5v^5*u^3*x^2
 G = [f, g, h, f2, g2, h2]
 
 
-#=
+
 """
 Generates the Cyclic-n system.
 For 5 & 7 are regular, 4 & 6 are not
@@ -38,12 +38,12 @@ function generate_cyclic(n::Int)
     return [p * (big(1)//1) for p in system], x
 end
 
-c5, vars = generate_cyclic(5)=#
+c6, vars = generate_cyclic(6)
 
 
 # TODO - Try with Katsura after making some further improvements if we want to go past C5.
 
-
+#=
 const BIG = 0
 const KATSURA = 1
 function generate_katsura(n; type::Int = BIG)
@@ -76,4 +76,5 @@ function generate_katsura(n; type::Int = BIG)
     return [p * coeff_type for p in system], u
 end
 
-k5, vars = generate_katsura(5, type=KATSURA)
+k6, vars = generate_katsura(6, type=KATSURA)
+=#

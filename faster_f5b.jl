@@ -69,7 +69,8 @@ Base.isless(a::CriticalPairQueueElem, b::CriticalPairQueueElem) = a.sugar < b.su
 Get sugar degree of a critical pair (u, F, v, G)
 """
 @inline function sugar(u::GrLexMonomial, F::FastPoly{C}, v::GrLexMonomial,  G::FastPoly{C}) where C
-    max(total_degree(u) + total_degree(F), total_degree(v) + total_degree(G))
+    return total_degree(u) + total_degree(F)
+    # max(total_degree(u) + total_degree(F), total_degree(v) + total_degree(G))
 end
 
 
@@ -134,7 +135,7 @@ Note - in F5B this returns whether uF or vG is divisible by B,
 end # syzygy_criterion
 
 """
-Returns whether the syzygy criterion is satisfied by a single signatures
+Returns whether the syzygy criterion is satisfied by a single signature
 
 Note - in F5B this returns whether vG is divisible by B,
        however, we only require monomial and syzygy index comparisons
@@ -192,14 +193,6 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
     # And also use incrementalF5 (reference original F5 paper) order
     # TODO - NEED TO PUSH INITIAL CRITICAL PAIR QUEUE DIFFERENTLY SO WE ONLY REDUCE ONE BASIS Gi AT A TIME!
     CPQ_list = [BinaryHeap{CriticalPairQueueElem}(Base.Order.Forward) for _ in 1:m]
-    #=
-    for i in 1:m
-        for j in i+1:m
-            u, v = critical_pair(B[i].poly, B[j].poly, num_vars)
-            push!(CPQ_list[i], CriticalPairQueueElem(sugar(u, B[i].poly, v, B[j].poly), i, j))
-        end #for
-    end #for
-    =#
     
     # Set up for Syzygy Criterion
     lms = GrLexMonomial[leading_monomial(LP.poly) for LP in B]
@@ -207,26 +200,64 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
 	syzygies = SyzygyPool(lms, idxs)
 
     # Main Loop
-    #changed = false # Debug
+    changed = false # Debug
     for k in m:-1:1 # currently computing Grobner basis of <f_k,...,f_m> from inputs
+        u_1_count = 0
+
         # Recreate Critical Pairs
         # NOTE: we know Spol(B[i], B[j]) reduces to 0 for all i, j >= k (since we have a reduce basis for
         # {f_k,...,f_m}. Thus, we can just add critical pairs for (f_{k-1}, f_i) for i >= k
-        f_kminus1 = B[k-1].poly
-        for i in k:length(B)
-            iszero(f_kminus1) || iszero(B[i].poly) && continue
-            u, v = critical_pair(f_kminus1, B[i].poly, num_vars)
-            push!(CPQ_list[k-1], CriticalPairQueueElem(sugar(u, f_kminus1, v, B[i].poly), k-1, i))
+        f_k = B[k].poly
+        for i in k+1:length(B)
+            iszero(f_k) || iszero(B[i].poly) && continue
+            u, v = critical_pair(f_k, B[i].poly, num_vars)
+            push!(CPQ_list[k], CriticalPairQueueElem(sugar(u, f_k, v, B[i].poly), k, i))
         end #for
         
-        #println("k = $k\n") # Debug
+        println("k = $k\n") # Debug
         # NOTE: <f_m> is a reduced Grobner basis
         while !isempty(CPQ_list[k])
             # Debug
-            #=if length(B) % 100 == 0 && changed
+            if length(B) == 4000
+                println("\n\nHit 4000 elements in basis, stopping for now")
+                X = [leading_monomial(F) for F in B]
+                X = unique(X)
+                println("There are $(length(X)) unique leading monomials")
+                Y = [(LP.index, LP.signature) for LP in B]
+                Y = unique(Y)
+                println("There are $(length(Y)) unique signatures (including index)")
+                Z = [LP.signature for LP in B]
+                Z = unique(Z)
+                println("There are $(length(Y)) unique signatures (not including index)")
+                uLP = unique(B)
+                println("There are $(length(uLP)) unique labelled polynomials")
+
+
+                sig_counts = Dict{Tuple{GrLexMonomial, Int}, Int}()
+                for LP in B
+                    key = (LP.signature, LP.index)
+                    sig_counts[key] = get(sig_counts, key, 0) + 1
+                end
+
+                # Count duplicates of (Signature, Index, Leading Monomial)
+                full_matches = Dict{Tuple{GrLexMonomial, Int, GrLexMonomial}, Int}()
+                for LP in B
+                    key = (LP.signature, LP.index, leading_monomial(LP.poly))
+                    full_matches[key] = get(full_matches, key, 0) + 1
+                end
+
+                println("Elements with duplicate (Sig, Index): ", count(x -> x > 1, values(sig_counts)))
+                println("Elements with duplicate (Sig, Index, LT): ", count(x -> x > 1, values(full_matches)))
+
+                println("Number of critical pairs that led to a new polynomial in this round where u or v was 1 is: $u_1_count")
+                return []
+            end
+
+            # Debug
+            if length(B) % 100 == 0 && changed
                 println("Size of current basis: $(length(B))")
                 changed = false
-            end=#
+            end
 
             cp = pop!(CPQ_list[k])
             F_idx, G_idx = cp.i, cp.j
@@ -239,7 +270,14 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
             # Avoid Signature Drop - see Sun/Wang 2010/2011 for why this can be skipped
             F.index == G.index && uF_sig == vG_sig && continue
 
+            # Debug
+            if u == identity_monomial() || v == identity_monomial()
+                # Should this be caught by the rewritten criterion
+                #println("Signature potentially unchanged!")
+            end
 
+            
+            # TODO - Duplicate signatures should be caught by the rewritten criterion, why aren't they?
             if ( !syzygy_criterion(syzygies,
                                    UInt16(F.index), uF_sig,
                                    UInt16(G.index), vG_sig
@@ -250,8 +288,11 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
                 newP = f5b_reduction(SP, B, syzygies)
                 push!(B, newP) # Irrespective of whether the new labelled polynomial is zero
 
-                #iszero(newP.poly) && println("WARNING: leaky criterion") # Debug
-                #changed = true # Debug
+                if u == identity_monomial() || v == identity_monomial() # Debug
+                    u_1_count += 1
+                end
+                iszero(newP.poly) && println("WARNING: leaky criterion") # Debug
+                changed = true # Debug
 
                 # Add new pairs
                 if !iszero(newP.poly)
@@ -264,10 +305,9 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
 
                         # TODO - Consider applying syzygy criterion here
                         u_m, v_m = critical_pair(B[i].poly, newP.poly, num_vars)
-                        crit_k = min(B[i].index, newP.index) # must be <= k
-                        # TODO - make this^ an assertion if things are weird
+
                         push!(
-                              CPQ_list[crit_k], 
+                              CPQ_list[k], 
                               CriticalPairQueueElem(sugar(u_m, B[i].poly, v_m, newP.poly), 
                                                     i, new_idx
                                                    )
@@ -277,13 +317,7 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
             end #if
         end #while
 
-        # TODO - Move critical pair stuff to the start of the loop and then this line
-        #        and the critical pair stuff can be removed
-        k == 1 && break
 
-        # TODO - CURRENTLY OVERHEAD OF REDUCE_GB AND SPECIFICALLY SUBTRACTION IS WORSE THAN NOT IMPLEMENTING
-        #        F5C. I SHOULD FIX SUBTRACTION AND THEN SEE IF F5C ACTUALLY IMPROVES THINGS!
-        #=
         # Inter-reduction F5C
         # The current basis is {f_1,...,f_{k-1}, g_1,...,g_l} where f_i are elements of the original basis
         # and g_j are a (non-reduced) basis of {f_k,...,f_m}.
@@ -296,22 +330,10 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int)::Vector{FastPoly
         clear_syz_pool(syzygies)
         for F in B
             update_syz_pool(syzygies, leading_monomial(F.poly), UInt16(F.index))
-        end=#
-
-        #=
-        # Recreate Critical Pairs
-        # NOTE: we know Spol(B[i], B[j]) reduces to 0 for all i, j >= k (since we have a reduce basis for
-        # {f_k,...,f_m}. Thus, we can just add critical pairs for (f_{k-1}, f_i) for i >= k
-        f_kminus1 = B[k-1].poly
-        for i in k:length(B)
-            iszero(f_kminus1) || iszero(B[i].poly) && continue
-            u, v = critical_pair(f_kminus1, B[i].poly, num_vars)
-            push!(CPQ_list[k-1], CriticalPairQueueElem(sugar(u, f_kminus1, v, B[i].poly), k-1, i))
-        end #for=#
-
-        # TODO - FIX HOW CRITICAL PAIR QUEUE IS HANDLED SUCH THAT THE CRITICAL PAIRS ARE ADDED LATER 
-        #        AND INSIDE THE WHILE LOOP THEY ARE ONLY ADDED FOR ELEMENTS IN THE CURRENT Gi
-        #println("Size of REDUCED basis: $(length(B))") # Debug
+        end
+        # --- END F5C INTER-REDUCTION --- 
+        
+        println("Size of REDUCED basis: $(length(B))") # Debug
     end #for
 
     # Return the set of polynomials that form the Basis
@@ -324,8 +346,6 @@ Determines whether syzygies from this pair will be handled later.
 Returns whether uF or vG is rewritable by B.
 """
 function rewritten_criterion(
-        #uF::LabelledPolynomial{C}, 
-        #vG::LabelledPolynomial{C}, 
         uF_sig::GrLexMonomial,
         F_idx::Int,
         vG_sig::GrLexMonomial,
@@ -349,11 +369,9 @@ end # rewritten_criterion
 Returns whether F is 'rewritable' by G
 """
 @inline function rewritable(
-        #F::LabelledPolynomial{C},
         F_sig::GrLexMonomial,
         F_idx::Int,
         F_gen::Int, 
-        #G::LabelledPolynomial{C}, 
         G_sig::GrLexMonomial,
         G_idx::Int,
         G_gen::Int)::Bool
@@ -389,9 +407,7 @@ function f5b_reduction( # TODO - Make this whole function mutate in-place!
 
             crit_failure = false
             for (H_idx, H) in enumerate(B)
-                if (
-                    rewritable(vG_sig, G.index, G_idx, H.signature, H.index, H_idx)
-                   )
+                if rewritable(vG_sig, G.index, G_idx, H.signature, H.index, H_idx)
                     crit_failure = true
                     break
                 end #if
@@ -404,10 +420,14 @@ function f5b_reduction( # TODO - Make this whole function mutate in-place!
             # TODO - in-place subtraction! THIS IS NOW THE MOST INEFFICIENT PART OTHER THAN INTER-REDUCTION!
             # 60% OF ALGORITHM TIME IS IN THE ADDITION THAT IS GENERATED BETWEEN FAST_POLY IN THE FOLLOWING
             # SPECIFICALLY IN ALLOCATING MEMORY AND HANDLING THE GARBAGE COLLECTOR!
-            F = F - (c * (v * G))
+
+            # Debug
+            newF = F - (c * (v * G))
+            @assert newF.signature == F.signature "F5B Reduction Error - Signature Changed" # Only in debug mode
+            F = newF
+            #F = F - (c * (v * G))
             reduced = true
             break
-            # @assert newF.signature == F.signature "F5B Reduction Error - Signature Changed" # Only in debug mode
         end #for
 
         !reduced && break
