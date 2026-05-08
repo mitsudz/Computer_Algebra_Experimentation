@@ -225,13 +225,6 @@ end
 end
 @inline Base.:*(c::GrLexMonomial, p::FastPoly{C}) where C = p * c
 
-# Vectorized multiplication: FastPoly * Scalar
-# TODO - This function currently is 27% of runtime - 
-#        Type stability is failing I think on line 228, and not being in-place is killing GC time
-#        Also let's not use map with a closure and do something such that the compiler can optimise better
-# TODO - Add tests to make sure of type stability - specifically that the output type is the same as p
-#        We should typecast c to C1 - no type promotion! If you want a big int type make it big int to start with
-#        Then add a convenience function to change the coefficient type instead!
 """
 Scalar multiplication.
 

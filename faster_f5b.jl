@@ -387,6 +387,8 @@ Returns whether F is 'rewritable' by G
     return F_gen < G_gen && G_idx == F_idx && divides(G_sig, F_sig)
 end # rewritable
 
+
+
 """
 Performs F5B reduction on a polynomial by B until it cannot be reduced further.
 Assumes we are doing reduction on a potential new polynomial to add to basis B
@@ -410,8 +412,6 @@ function f5b_reduction( # TODO - Make this whole function mutate in-place!
             v = div_multiple(leading_monomial(F), leading_monomial(G)) 
             vG_sig = v * G.signature
 
-            !is_sig_greater(F.signature, F.index, vG_sig, G.index) && continue
-
             syzygy_criterion(syzygies, UInt16(G.index), vG_sig) && continue
 
             crit_failure = false
@@ -422,6 +422,8 @@ function f5b_reduction( # TODO - Make this whole function mutate in-place!
                 end #if
             end #for
             crit_failure && continue
+
+            !is_sig_greater(F.signature, F.index, vG_sig, G.index) && continue
 
             # TODO - Make it so all polynomials are monic by the time the enter the basis
             c = leading_coefficient(F.poly) / leading_coefficient(G.poly)
@@ -444,5 +446,68 @@ function f5b_reduction( # TODO - Make this whole function mutate in-place!
 
     return F
 end # f5b_reduction
+
+"""
+Performs a more optimised version of F5B reduction that returns a set of reduced
+polynomials (i.e., doesn't delay computations until later).
+"""
+function better_f5b_reduction(
+        F::LabelledPolynomial{C},
+        B::Vector{LabelledPolynomial{C}},
+        syzygies::SyzygyPool) where C
+
+    B = deepcopy(B)
+    todo = [F]
+    done = Vector{LabelledPolynomial{C}}()
+    iszero(F.poly) && return F # Early exit
+    
+    while !isempty(todo)
+        F = pop!(todo) # TODO - In future this should be a polynomial with minimal degree
+        while !iszero(F.poly)
+            reduced = false
+
+            for (G_idx, G) in enumerate(B)
+                iszero(G.poly) && continue
+                !divides(leading_monomial(G), leading_monomial(F)) && continue
+
+                v = div_multiple(leading_monomial(F), leading_monomial(G)) 
+                vG_sig = v * G.signature
+
+                F.index == G.index && F.signature == vG_sig && continue # Disallow signature drop
+
+                syzygy_criterion(syzygies, UInt16(G.index), vG_sig) && continue
+
+                crit_failure = false
+                for (H_idx, H) in enumerate(B)
+                    if rewritable(vG_sig, G.index, G_idx, H.signature, H.index, H_idx)
+                        crit_failure = true
+                        break
+                    end #if
+                end #for
+                crit_failure && continue
+
+                if !is_sig_greater(F.signature, F.index, vG_sig, G.index)
+                    c = leading_coefficient(G.poly) / leading_coefficient(F.poly) 
+                    push!(todo, (c * (v * G)) - F)
+                    continue
+                else
+                    c = leading_coefficient(F.poly) / leading_coefficient(G.poly)
+                    F = F - (c * (v * G))
+                    reduced = true
+                    break
+                end 
+            end #for
+
+            !reduced && break
+        end #while
+
+        # Add top-reduced polynomial to basis
+        push!(done, F) 
+        push!(B, F)
+
+    end #while
+
+    return done
+end # better_f5b_reduction
 
 

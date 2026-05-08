@@ -66,6 +66,39 @@ function polyrem(f::T, divisors::Vector{T})::T where {T <: AbstractPolynomial}
     return r
 end
 
+"""
+Computes a remainder after multivariate polynomial division of `f` by the divisors.
+Also returns a vector of quotients
+"""
+function extended_polyrem(f::T, divisors::Vector{T})::Tuple{T, Vector{T}} where {T <: AbstractPolynomial}
+    r = 0*f
+    qs = [0*f for _ in divisors]
+    while f != 0
+        lt_f = MultivariatePolynomials.leading_term(f)
+        found_divisor = false
+
+        # Divide leading term by a divisor and update f
+        for (i, divisor) in enumerate(divisors)
+            lt_div = MultivariatePolynomials.leading_term(divisor)
+            if MultivariatePolynomials.divides(lt_div, lt_f)
+                found_divisor = true
+                q = MultivariatePolynomials.div_multiple(lt_f, lt_div)
+                f -= divisor * q
+                qs[i] += q
+                break
+            end
+        end
+
+        # Add to remainder if no divisor found
+        if found_divisor == false
+            r += lt_f
+            f -= lt_f
+        end
+    end
+
+    return (r, qs)
+end
+
 function reduce_gb(G::Vector{T})::Vector{T} where {T <: AbstractPolynomial}
 	# Remove 0 polynomials
 	G = filter(p -> !iszero(p), G)
