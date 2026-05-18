@@ -285,17 +285,22 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int) where C
                 !rewritten_criterion(uF_sig, F.index, vG_sig, G.index, B, F_idx, G_idx) )
                 SP = ((F*u) // leading_coefficient(F.poly)) - ((G*v) // leading_coefficient(G.poly)) # S-polynomial
 
-                newP = f5b_reduction(SP, B, syzygies)
-                push!(B, newP) # Irrespective of whether the new labelled polynomial is zero
+                newPs = better_f5b_reduction(SP, B, syzygies)
+                #newP = f5b_reduction(SP, B, syzygies)
+                #push!(B, newP) # Irrespective of whether the new labelled polynomial is zero
 
                 if u == identity_monomial() || v == identity_monomial() # Debug
                     u_1_count += 1
                 end
-                iszero(newP.poly) && println("WARNING: leaky criterion") # Debug
+                #iszero(newP.poly) && println("WARNING: leaky criterion") # Debug
                 changed = true # Debug
 
                 # Add new pairs
-                if !iszero(newP.poly)
+                for newP in newPs
+                    push!(B, newP) # Irrespective of whether the new labelled polynomial is zero
+                    iszero(newP.poly) && println("WARNING: leaky criterion") # Debug
+                    iszero(newP.poly) && continue
+
                     update_syz_pool(syzygies, leading_monomial(newP.poly), UInt16(newP.index))
 
                     new_idx = length(B)
@@ -321,7 +326,7 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int) where C
                                                    )
                              )
                     end #for
-                end #if
+                end #for
             end #if
         end #while
 
@@ -457,9 +462,12 @@ function better_f5b_reduction(
         syzygies::SyzygyPool) where C
 
     B = deepcopy(B)
-    todo = [F]
+    #todo = BinaryHeap{LabelledPolynomial{C}}(DegreeOrdering())
+    todo = BinaryHeap{LabelledPolynomial{C}}(Base.Order.Forward)
+    push!(todo, F)
+    #todo = [F]
     done = Vector{LabelledPolynomial{C}}()
-    iszero(F.poly) && return F # Early exit
+    iszero(F.poly) && return [F] # Early exit
     
     while !isempty(todo)
         F = pop!(todo) # TODO - In future this should be a polynomial with minimal degree
