@@ -218,11 +218,11 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int) where C
             push!(CPQ_list[k], CriticalPairQueueElem(sugar(u, f_k, v, B[i].poly), k, i))
         end #for
         
-        println("k = $k\n") # Debug
+        #println("k = $k\n") # Debug
         # NOTE: <f_m> is a reduced Grobner basis
         while !isempty(CPQ_list[k])
             # Debug
-            if length(B) == 4000
+            #=if length(B) == 4000
                 println("\n\nHit 4000 elements in basis, stopping for now")
                 X = [leading_monomial(F) for F in B]
                 X = unique(X)
@@ -255,13 +255,13 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int) where C
 
                 println("Number of critical pairs that led to a new polynomial in this round where u or v was 1 is: $u_1_count")
                 return []
-            end
+            end=#
 
             # Debug
-            if length(B) % 100 == 0 && changed
+            #=if length(B) % 100 == 0 && changed
                 println("Size of current basis: $(length(B))")
                 changed = false
-            end
+            end=#
 
             cp = pop!(CPQ_list[k])
             F_idx, G_idx = cp.i, cp.j
@@ -347,7 +347,7 @@ function _f5b(fast_initial::Vector{FastPoly{C}}, num_vars::Int) where C
 
         # --- END F5C INTER-REDUCTION --- 
         
-        println("Size of REDUCED basis: $(length(B))") # Debug
+        #println("Size of REDUCED basis: $(length(B))") # Debug
     end #for
 
     # Return the set of polynomials that form the Basis
